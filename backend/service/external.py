@@ -2,8 +2,8 @@ import asyncio
 from typing import Any, Optional
 
 import httpx
-from app.core.config import settings
-from app.logger import logger
+from backend.config import settings
+from backend.logging_config.logger import logger
 
 
 class CallerAPIClient:
