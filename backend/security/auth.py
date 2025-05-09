@@ -5,12 +5,12 @@ from json import dumps
 from typing import Dict, Tuple, Union
 
 import jwt
-from app.core.config import settings
-from app.core.db import collection
-from app.core.redis import redis
-from app.logger import logger
-from app.schemas.rbac import UserRole
-from app.utils import get_current_time_utc, validate_object_id
+from backend.config import settings
+from backend.db_config.db import collection
+from backend.redis_config.redis import redis
+from backend.logging_config.logger import logger
+from backend.schemas.rbac import UserRole
+from backend.utils import get_current_time_utc, validate_object_id
 from bson import ObjectId
 from Crypto.Cipher import AES
 from Crypto.Hash import SHA256

@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Dict, Set
 
-from app.schemas.rbac import UserRole
+from backend.schemas.rbac import UserRole
 
 __all__ = ["Permission", "ROLE_PERMISSIONS"]
 

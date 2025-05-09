@@ -152,6 +152,8 @@ pluggy==1.5.0
     # via ocrmypdf
 pycparser==2.22
     # via cffi
+pycryptodome==3.22.0
+    # via -r .\requirements.in
 pydantic==2.11.4
     # via
     #   -r .\requirements.in
