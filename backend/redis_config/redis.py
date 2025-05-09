@@ -1,8 +1,8 @@
 from typing import Optional
 
-from app.common.exceptions import EmptyValueForCachingError, MissingKeyError
-from app.core.config import settings
-from app.logger import logger
+from backend.common.exceptions import EmptyValueForCachingError, MissingKeyError
+from backend.config import settings
+from backend.logging_config.logger import logger
 from redis.commands.json.path import Path
 from redis.exceptions import ConnectionError
 
