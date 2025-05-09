@@ -1,7 +1,7 @@
 import http
 import time
 
-from app.logger import logger
+from backend.logging_config.logger import logger
 from fastapi import Request
 
 
