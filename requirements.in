@@ -30,3 +30,5 @@ thefuzz
 jmespath
 typer
 pycryptodome
+Jinja2
+mypy-boto3-s3

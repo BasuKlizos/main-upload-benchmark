@@ -7,9 +7,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from app.core.aws import s3_operation
-from app.core.config import settings
-from app.logger import logger
+from backend.aws_config.aws import s3_operation
+from backend.config import settings
+from backend.logging_config.logger import logger
 from bson import ObjectId
 from fastapi import HTTPException
 from motor.motor_asyncio import AsyncIOMotorCollection
