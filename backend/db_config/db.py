@@ -2,8 +2,8 @@ import time
 from threading import Lock
 from typing import Optional
 
-from app.core.config import settings
-from app.logger import logger
+from backend.config import settings
+from backend.logging_config.logger import logger
 from motor.motor_asyncio import (
     AsyncIOMotorClient,
     AsyncIOMotorCollection,
