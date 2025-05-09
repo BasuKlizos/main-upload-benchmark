@@ -1,10 +1,10 @@
 from typing import List, Optional, Union
 
-from app.api.utils import api_key_ops
-from app.schemas.rbac import UserRole
-from app.security.auth import get_current_user_role
-from app.security.perms import *
-from app.types_ import UserData
+from utils import api_key_ops
+from backend.schemas.rbac import UserRole
+from backend.security.auth import get_current_user_role
+from backend.security.perms import *
+from backend.types_ import UserData
 from fastapi import Depends, Header, HTTPException, Request, status
 
 class PermissionChecker:
