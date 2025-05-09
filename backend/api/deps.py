@@ -1,11 +1,18 @@
+import os
+
 from typing import List, Optional, Union
+from fastapi import Depends, Header, HTTPException, Request, status
 
 from backend.api.utils import api_key_ops
 from backend.schemas.rbac import UserRole
 from backend.security.auth import get_current_user_role
 from backend.security.perms import *
 from backend.types_ import UserData
-from fastapi import Depends, Header, HTTPException, Request, status
+from backend.config import settings
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 class PermissionChecker:
     """
@@ -98,6 +105,16 @@ def get_user_details_factory(required_permissions: List[Permission]):
         Raises:
             HTTPException: If authentication fails or permissions are insufficient
         """
+
+        # Dev Permission
+        if settings.ENV == "dev":
+            return UserData(
+                id="dev-user-id",
+                email="dev@example.com",
+                role=UserRole.ADMIN,
+                permissions=ROLE_PERMISSIONS[UserRole.ADMIN],
+            )
+
         # Check API key authentication first
         if x_api_key:
             return await api_key_ops(mode="get", x_api_key=x_api_key)

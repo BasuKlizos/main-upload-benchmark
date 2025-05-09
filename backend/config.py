@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: Optional[str] = config("REDIS_PASSWORD", cast=str, default="")
     REDIS_CACHE_EXPIRY_TIME: int = config("REDIS_CACHE_EXPIRY_TIME", cast=str, default=120)
 
+    # Dev Permission
+    ENV:str = config("ENV", default="dev")
+
     # AWS Credentials
     AWS_ACCESS_KEY: str = config("AWS_ACCESS_KEY", cast=str)
     AWS_ACCESS_SECRET: str = config("AWS_ACCESS_SECRET", cast=str)

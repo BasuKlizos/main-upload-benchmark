@@ -14,6 +14,7 @@ from backend.upload.utils import (
 from backend.db_config.db import collection
 from backend.logging_config.logger import logger
 from backend.security.perms import Permission
+from backend.api.deps import get_user_details_factory
 from backend.types_ import UserData
 from backend.utils import (
     create_batch_id,
@@ -53,7 +54,8 @@ async def upload_candidates(
     batch_name: str = Form(..., description="Name of the batch"),
     files: List[UploadFile] = File(..., description="Multiple candidate files (PDF, DOCX or ZIP)"),
     send_invitations: bool = Form(False, description="Send interview invitations to qualified candidates"),
-    user_data: UserData = Depends(PermissionChecker([Permission.MANAGE_CANDIDATES])),
+    # user_data: UserData = get_user_details_factory(PermissionChecker([Permission.MANAGE_CANDIDATES])),
+    user_data: UserData = get_user_details_factory([Permission.MANAGE_CANDIDATES]),
 ) -> JSONResponse:
     # Check if batch_name is already taken
     if await batches.find_one({"batch_name": batch_name}):
