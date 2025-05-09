@@ -5,15 +5,15 @@ import shutil
 import zipfile
 from typing import List
 
-from api.deps import PermissionChecker
-from utils import (
+from backend.api.deps import PermissionChecker
+from backend.upload.utils import (
     get_job_data,
     process_zip_extracted_files,
     send_processing_completion_email,
 )
-from db_config.db import collection
-from logging_config.logger import logger
-from security.perms import Permission
+from backend.db_config.db import collection
+from backend.logging_config.logger import logger
+from backend.security.perms import Permission
 from backend.types_ import UserData
 from backend.utils import (
     create_batch_id,

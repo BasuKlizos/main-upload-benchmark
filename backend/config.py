@@ -4,7 +4,7 @@ from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings
 from starlette.config import Config
 
-config = Config(env_file="app/.env")
+config = Config(env_file="backend/.env")
 
 
 class Settings(BaseSettings):
