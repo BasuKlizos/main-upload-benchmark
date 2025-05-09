@@ -1,6 +1,6 @@
 from typing import Tuple
 
-from app.schemas.rbac import UserRole
+from backend.schemas.rbac import UserRole
 from typing_extensions import TypedDict
 
 
