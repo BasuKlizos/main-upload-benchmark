@@ -168,7 +168,7 @@ def get_temp_path() -> str:
     # Combine with 'temp' to get the absolute path of temp directory
     temp_path = os.path.join(current_directory, "tmp")
 
-    return temp_path
+    return temp_path    
 
 
 def generate_token() -> str:
