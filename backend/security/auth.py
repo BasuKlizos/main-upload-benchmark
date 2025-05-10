@@ -11,6 +11,9 @@ from backend.redis_config.redis import redis
 from backend.logging_config.logger import logger
 from backend.schemas.rbac import UserRole
 from backend.utils import get_current_time_utc, validate_object_id
+from backend.types_ import UserData
+from backend.security.perms import ROLE_PERMISSIONS
+
 from bson import ObjectId
 from Crypto.Cipher import AES
 from Crypto.Hash import SHA256
@@ -154,39 +157,49 @@ async def decode_and_verify_token(token: str = Depends(oauth2_scheme)) -> dict[s
     return sub
 
 
-async def get_current_user_role(
-    token: str = Depends(oauth2_scheme),
-) -> Tuple[Dict[str, Union[str, int]], UserRole]:
-    """
-    Validate JWT token and retrieve current user's role and ID.
+# async def get_current_user_role(
+#     token: str = Depends(oauth2_scheme),
+# ) -> Tuple[Dict[str, Union[str, int]], UserRole]:
+#     """
+#     Validate JWT token and retrieve current user's role and ID.
 
-    This function performs several validation steps:
-    1. Decodes and validates the JWT token
-    2. Extracts user information from token payload
-    3. Validates the token subject (user ID)
-    4. Verifies user exists in database
-    5. Validates user role matches token claim
+#     This function performs several validation steps:
+#     1. Decodes and validates the JWT token
+#     2. Extracts user information from token payload
+#     3. Validates the token subject (user ID)
+#     4. Verifies user exists in database
+#     5. Validates user role matches token claim
 
-    Args:
-        token (str): JWT token from Authorization header, obtained via OAuth2 dependency
+#     Args:
+#         token (str): JWT token from Authorization header, obtained via OAuth2 dependency
 
-    Returns:
-        Tuple[Dict[str, Union[str, int]], UserRole]: A tuple containing the user info dict and the authenticated user's role
+#     Returns:
+#         Tuple[Dict[str, Union[str, int]], UserRole]: A tuple containing the user info dict and the authenticated user's role
 
-    Raises:
-        HTTPException(401): In the following cases:
-            - Token is expired
-            - Token is invalid or malformed
-            - Token subject (user ID) is invalid
-            - Token payload is missing required claims
-            - User not found in database
-            - User's role doesn't match token claim
-    """
-    # Decode and verify the token payload
-    sub = await decode_and_verify_token(token)
+#     Raises:
+#         HTTPException(401): In the following cases:
+#             - Token is expired
+#             - Token is invalid or malformed
+#             - Token subject (user ID) is invalid
+#             - Token payload is missing required claims
+#             - User not found in database
+#             - User's role doesn't match token claim
+#     """
+#     # Decode and verify the token payload
+#     sub = await decode_and_verify_token(token)
 
-    # Return validated user role as enum along with user info dict
-    return sub, UserRole(sub["role"])
+#     # Return validated user role as enum along with user info dict
+#     return sub, UserRole(sub["role"])
+async def get_current_user_role(token: str = None) -> UserData:
+    # Hardcoded user data (based on your MongoDB collection structure)
+    return (
+        {
+            "user_id": "64fa58f7e6b2c96e4e9d2f01",
+            "email": "john.doe@example.com",
+            "role": UserRole.ADMIN.value,
+        },
+        UserRole.ADMIN,
+    )
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

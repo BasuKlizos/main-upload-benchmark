@@ -1,7 +1,8 @@
-from typing import Optional
+from typing import Optional, Set
 
 from backend.schemas.rbac import UserRole
 from pydantic import BaseModel, EmailStr, constr
+from backend.security.perms import Permission
 
 
 class UserBase(BaseModel):
@@ -46,3 +47,10 @@ class PasswordReset(BaseModel):
 
 class ForgotPassword(BaseModel):
     email: EmailStr
+
+
+class UserData(BaseModel):
+    id: str
+    email: str
+    role: UserRole
+    permissions: Set[Permission]

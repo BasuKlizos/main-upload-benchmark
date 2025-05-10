@@ -108,11 +108,13 @@ def get_user_details_factory(required_permissions: List[Permission]):
 
         # Dev Permission
         if settings.ENV == "dev":
-            return UserData(
-                id="dev-user-id",
-                email="dev@example.com",
-                role=UserRole.ADMIN,
-                permissions=ROLE_PERMISSIONS[UserRole.ADMIN],
+            return (
+                {
+                    "user_id": "64fa58f7e6b2c96e4e9d2f01",
+                    "email": "john.doe@example.com",
+                    "role": UserRole.ADMIN.value,
+                },
+                UserRole.ADMIN,
             )
 
         # Check API key authentication first
@@ -123,7 +125,8 @@ def get_user_details_factory(required_permissions: List[Permission]):
         if authorization and authorization.startswith("Bearer "):
             token = authorization.removeprefix("Bearer ").strip()
             try:
-                user_role = await get_current_user_role(token=token)
+                # user_role = await get_current_user_role(token=token)
+                user_role = await get_current_user_role()
                 return await checker(user_role)
             except HTTPException:
                 raise HTTPException(
