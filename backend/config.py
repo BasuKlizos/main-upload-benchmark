@@ -38,8 +38,8 @@ class Settings(BaseSettings):
     DOC_ROOT_PASSWORD: str = config("DOC_ROOT_PASSWORD", cast=str)
 
     # MongoDB Settings
-    MONGO_USERNAME: Optional[str] = config("MONGO_USERNAME", cast=str, default=None)
-    MONGO_PASSWORD: Optional[str] = config("MONGO_PASSWORD", cast=str, default=None)
+    # MONGO_USERNAME: Optional[str] = config("MONGO_USERNAME", cast=str, default=None)
+    # MONGO_PASSWORD: Optional[str] = config("MONGO_PASSWORD", cast=str, default=None)
     MONGO_HOST: str = config("MONGO_HOST", cast=str, default="localhost")
     MONGO_PORT: int = config("MONGO_PORT", cast=int, default=27017)
     MONGO_DB: str = config("MONGO_DB", cast=str, default="talentsync")
