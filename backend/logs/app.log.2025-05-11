@@ -458,3 +458,7 @@ Traceback (most recent call last):
   File "D:\Company[Klizo]\projects\talentsync_helper\upload_main\main-upload-benchmark\.venv\lib\site-packages\redis\connection.py", line 666, in read_response
     raise response
 redis.exceptions.ResponseError: unknown command 'JSON.GET', with args beginning with: 'job:job_001' '.' 
+
+
+from here 
+

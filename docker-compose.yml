@@ -24,11 +24,34 @@ services:
     networks:
       - backend
 
+  mongodb_exporter:
+    image: bitnami/mongodb-exporter:latest
+    container_name: mongodb_exporter
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017
+    ports:
+      - "9216:9216"
+    depends_on:
+      - mongodb
+    networks:
+      - backend
+
   redis:
     image: redis:7
     container_name: redis
     ports:
       - "6379:6379"
+    networks:
+      - backend
+
+  redis_exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: redis_exporter
+    command: --redis.addr=redis://redis:6379
+    ports:
+      - "9121:9121"
+    depends_on:
+      - redis
     networks:
       - backend
 

@@ -1,5 +1,6 @@
 import asyncio
 import io
+import time
 import os.path
 import shutil
 import zipfile
@@ -33,6 +34,19 @@ from fastapi import (
     status,
 )
 from fastapi.responses import JSONResponse
+from monitor.metrices import (
+    UPLOAD_REQUESTS,
+    UPLOAD_SUCCESS,
+    UPLOAD_FAILURE,
+    FILE_COUNT,
+    ZIP_FILES,
+    PDF_FILES,
+    DOCX_FILES,
+    UNSUPPORTED_FILES,
+    UPLOAD_DURATION,
+    PROCESS_DURATION,
+    EMAIL_SENT
+)
 
 router = APIRouter()
 
@@ -57,6 +71,11 @@ async def upload_candidates(
     # user_data: UserData = get_user_details_factory(PermissionChecker([Permission.MANAGE_CANDIDATES])),
     user_data: UserData = get_user_details_factory([Permission.MANAGE_CANDIDATES]),
 ) -> JSONResponse:
+    
+    start_time = time.time()
+    UPLOAD_REQUESTS.inc()
+
+
     # Check if batch_name is already taken
     if await batches.find_one({"batch_name": batch_name}):
         raise HTTPException(
@@ -78,8 +97,15 @@ async def upload_candidates(
 
     try:
         os.makedirs(batch_directory, exist_ok=True)
+        
+        zip_file_count = 0
+        pdf_file_count = 0
+        docx_file_count = 0
+        unsupported_file_count = 0
+
         for file in files:
             logger.info(f"Processing file: {file.filename}")
+            FILE_COUNT.inc()
             if file.content_type not in [
                 "application/zip",
                 "application/x-zip-compressed",
@@ -87,6 +113,10 @@ async def upload_candidates(
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             ]:
                 logger.error(f"Invalid file type for {file.filename}: {file.content_type}")
+                
+                unsupported_file_count += 1
+                UNSUPPORTED_FILES.inc()
+                
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"File {file.filename} is not supported. Only ZIP files are allowed",
@@ -94,6 +124,10 @@ async def upload_candidates(
 
             # Check file type and process accordingly
             if file.content_type in ["application/zip", "application/x-zip-compressed"]:
+                
+                zip_file_count += 1
+                ZIP_FILES.inc()
+
                 contents = await file.read()
                 temp_extract_dir = os.path.join(batch_directory, "_temp_extract")
                 os.makedirs(temp_extract_dir, exist_ok=True)
@@ -117,6 +151,12 @@ async def upload_candidates(
                 shutil.rmtree(temp_extract_dir)
 
             elif file.content_type in ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
+                
+                pdf_file_count += 1
+                docx_file_count += 1
+                PDF_FILES.inc()
+                DOCX_FILES.inc()
+
                 base, ext = os.path.splitext(file.filename)
                 # Use timestamp to ensure uniqueness
                 dest_filename = f"{base}_{get_current_time_utc().timestamp()}{ext}"
@@ -124,6 +164,10 @@ async def upload_candidates(
                 with open(file_path, "wb") as f:
                     f.write(await file.read())
             else:
+                
+                unsupported_file_count += 1
+                UNSUPPORTED_FILES.inc()
+
                 logger.error(f"Invalid file type for {file.filename}: {file.content_type}, Skipping file")
                 continue
 
@@ -161,6 +205,7 @@ async def upload_candidates(
 
         # Process all extracted directories in background
         async def background_processing():
+            process_start_time = time.time()
             try:
                 if os.path.exists(batch_directory):
                     logger.info(f"Starting background processing for directory: {batch_directory}")
@@ -175,6 +220,7 @@ async def upload_candidates(
 
                     # Send Processing completion email to user
                     await send_processing_completion_email(batch_id, details, job.get("title"), request)
+                    EMAIL_SENT.inc()
                 else:
                     logger.error(f"Extracted directory does not exist: {batch_directory}")
 
@@ -185,6 +231,15 @@ async def upload_candidates(
                     logger.debug(f"Cleaned up temp directory after error: {batch_directory}")
                 except Exception as cleanup_error:
                     logger.error(f"Failed to cleanup temp directory: {cleanup_error}", exc_info=True)
+
+            # Log process duration
+            process_duration = time.time() - process_start_time
+            PROCESS_DURATION.observe(process_duration)
+
+        
+        # Log upload duration
+        upload_duration = time.time() - start_time
+        UPLOAD_DURATION.observe(upload_duration)
 
         asyncio.create_task(background_processing())
         return response
@@ -197,7 +252,13 @@ async def upload_candidates(
             logger.debug(f"Cleaned up temp directory after error: {batch_directory}")
         except Exception as cleanup_error:
             logger.error(f"Failed to cleanup temp directory: {cleanup_error}", exc_info=True)
+        
+        UPLOAD_FAILURE.inc()
+        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing upload: {str(e)}",
         )
+
+# Log success
+UPLOAD_SUCCESS.inc()
