@@ -127,3 +127,5 @@ yarl
 zipp
 prometheus-fastapi-instrumentator
 prometheus_client
+dramatiq
+asgiref

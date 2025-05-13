@@ -17,6 +17,7 @@ from backend.logging_config.logger import logger
 from backend.security.perms import Permission
 from backend.api.deps import get_user_details_factory
 from backend.types_ import UserData
+from backend.dramatiq_config.background_task import process_zip_task
 from backend.utils import (
     create_batch_id,
     get_current_time_utc,
@@ -129,6 +130,7 @@ async def upload_candidates(
                 ZIP_FILES.inc()
 
                 contents = await file.read()
+
                 temp_extract_dir = os.path.join(batch_directory, "_temp_extract")
                 os.makedirs(temp_extract_dir, exist_ok=True)
 
@@ -152,8 +154,8 @@ async def upload_candidates(
 
             elif file.content_type in ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
                 
-                pdf_file_count += 1
-                docx_file_count += 1
+                pdf_file_count += int(file.content_type == "application/pdf")
+                docx_file_count += int(file.content_type.endswith("document"))
                 PDF_FILES.inc()
                 DOCX_FILES.inc()
 

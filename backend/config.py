@@ -40,8 +40,8 @@ class Settings(BaseSettings):
     # MongoDB Settings
     # MONGO_USERNAME: Optional[str] = config("MONGO_USERNAME", cast=str, default=None)
     # MONGO_PASSWORD: Optional[str] = config("MONGO_PASSWORD", cast=str, default=None)
-    # MONGO_HOST: str = config("MONGO_HOST", cast=str, default="localhost")
-    MONGO_HOST: str = config("MONGO_HOST", cast=str, default="mongodb")
+    MONGO_HOST: str = config("MONGO_HOST", cast=str, default="localhost")
+    # MONGO_HOST: str = config("MONGO_HOST", cast=str, default="mongodb")
     MONGO_PORT: int = config("MONGO_PORT", cast=int, default=27017)
     MONGO_DB: str = config("MONGO_DB", cast=str, default="talentsync")
     MONGO_DSN: Optional[str] = None
@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     AWS_ACCESS_SECRET: str = config("AWS_ACCESS_SECRET", cast=str)
     AWS_BUCKET_NAME: str = config("AWS_BUCKET_NAME", cast=str)
     AWS_S3_ENVIRONMENT: str = config("AWS_S3_ENVIRONMENT", cast=str, default="prod")
-    AWS_ACCESS_REGION: str = config("AWS_ACCESS_REGION", cast=str, default="eu-west-1")
+    AWS_ACCESS_REGION: str = config("AWS_ACCESS_REGION", cast=str, default="ap-south-1")
 
     S3_OBJECT_BASE_PATH: str = f"https://{AWS_BUCKET_NAME}.s3.{AWS_ACCESS_REGION}.amazonaws.com"
 

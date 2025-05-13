@@ -25,6 +25,8 @@ anyio==4.9.0
     #   openai
     #   starlette
     #   watchfiles
+asgiref==3.8.1
+    # via -r .\requirements.in
 async-timeout==5.0.1
     # via
     #   -r .\requirements.in
@@ -108,6 +110,8 @@ dnspython==2.7.0
     #   -r .\requirements.in
     #   email-validator
     #   pymongo
+dramatiq==1.17.1
+    # via -r .\requirements.in
 ecdsa==0.19.1
     # via
     #   -r .\requirements.in
@@ -293,6 +297,7 @@ pluggy==1.5.0
 prometheus-client==0.21.1
     # via
     #   -r .\requirements.in
+    #   dramatiq
     #   prometheus-fastapi-instrumentator
 prometheus-fastapi-instrumentator==7.1.0
     # via -r .\requirements.in
@@ -454,6 +459,7 @@ typing-extensions==4.13.2
     # via
     #   -r .\requirements.in
     #   anyio
+    #   asgiref
     #   black
     #   fastapi
     #   multidict
