@@ -3,12 +3,11 @@ from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from prometheus_client import make_asgi_app
 
-from monitor.middleware import PrometheusMiddleware
+from backend.monitor.middleware import PrometheusMiddleware
 from backend.upload.upload import router
 
 app = FastAPI()
 
-# Add Prometheus Middleware
 app.add_middleware(PrometheusMiddleware)
 
 # Instrument and expose Prometheus metrics

@@ -34,7 +34,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import JSONResponse
-from monitor.metrices import (
+from backend.monitor.metrices import (
     UPLOAD_REQUESTS,
     UPLOAD_SUCCESS,
     UPLOAD_FAILURE,

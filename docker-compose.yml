@@ -1,7 +1,9 @@
 services:
-  app:
-    build: .
-    container_name: fastapi_app
+  backend_service:
+    build:
+      context: . # Root directory for build context
+      dockerfile: backend/Dockerfile # Dockerfile is inside backend/
+    container_name: upload_benchmark
     ports:
       - "8000:8000"
     depends_on:
@@ -11,8 +13,10 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - MONGO_URI=mongodb://mongodb:27017
       - REDIS_HOST=redis
+    env_file:
+      - .env
     networks:
-      - backend
+      - talentsync_network
 
   mongodb:
     image: mongo:7
@@ -22,7 +26,7 @@ services:
     volumes:
       - mongo_data:/data/db
     networks:
-      - backend
+      - talentsync_network
 
   mongodb_exporter:
     image: bitnami/mongodb-exporter:latest
@@ -34,15 +38,23 @@ services:
     depends_on:
       - mongodb
     networks:
-      - backend
+      - talentsync_network
 
   redis:
-    image: redis:7
+    image: redis/redis-stack:latest
     container_name: redis
     ports:
       - "6379:6379"
+      - "8001:8001"
+    volumes:
+      - redis_data:/data
     networks:
-      - backend
+      - talentsync_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis_exporter:
     image: oliver006/redis_exporter:latest
@@ -53,30 +65,39 @@ services:
     depends_on:
       - redis
     networks:
-      - backend
+      - talentsync_network
 
   prometheus:
     image: prom/prometheus
     container_name: prometheus
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
       - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
     networks:
-      - backend
+      - talentsync_network
 
   grafana:
     image: grafana/grafana
     container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - .backend/monitoring/grafana/provisioning/dashboards:/var/lib/grafana/dashboards
+      - .backend/monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - grafana_data:/var/lib/grafana
     ports:
       - "3000:3000"
     networks:
-      - backend
-    depends_on:
-      - prometheus
+      - talentsync_network
+    restart: always
 
 networks:
-  backend:
+  talentsync_network:
 
 volumes:
   mongo_data:
+  prometheus_data:
+  grafana_data:
+  redis_data:

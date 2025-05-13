@@ -3,11 +3,14 @@ FROM python:3.10.8 as builder
 
 WORKDIR /app
 
+# Copy requirements.txt (we assume build context is project root!)
+COPY requirements.txt .
+
 # Install build dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc python3-dev
 
-COPY requirements.txt .
+# Build wheels and upgrade pip
 RUN pip wheel --no-cache-dir --no-deps --wheel-dir /app/wheels -r requirements.txt && \
     pip install --upgrade pip
 
@@ -30,7 +33,7 @@ RUN wget --no-verbose -O /tmp/xpdf-tools.tar.gz https://dl.xpdfreader.com/xpdf-t
     cp /tmp/xpdf/bin64/pdfinfo /usr/bin/ && \
     rm -rf /tmp/xpdf-tools.tar.gz /tmp/xpdf
 
-# Install OCR and PDF processing dependencies
+# Install OCR and PDF dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     tesseract-ocr \
@@ -39,20 +42,22 @@ RUN apt-get update && \
     tesseract-ocr-spa \
     ghostscript
 
-# Copy wheels and requirements from builder
+# Copy built wheels and install Python dependencies
 COPY --from=builder /app/wheels /wheels
 COPY --from=builder /app/requirements.txt .
 
-# Install dependencies from wheels
 RUN pip install --no-cache-dir /wheels/*
 
-# Copy application and templates
-COPY ./app ./app
-COPY ./templates ./templates
+# Copy backend folder into /app/backend/
+COPY backend/ backend/
 
-# Change ownership
+#  Set PYTHONPATH so backend package can be found
+ENV PYTHONPATH=/app
+
+# Change ownership to non-root user
 RUN chown -R talentsync:talentsync /app
 
 USER talentsync
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+#  Use correct module path from backend/
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
