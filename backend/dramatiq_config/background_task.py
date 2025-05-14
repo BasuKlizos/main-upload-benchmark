@@ -4,12 +4,12 @@ import uuid
 import redis
 
 from dramatiq.brokers.redis import RedisBroker
-from backend.upload.utils import (
-    # process_zip_extracted_files,
-    # send_processing_completion_email,
-    _process_file_chunk,
-    _process_single_file
-)
+# from backend.upload.utils import (
+#     # process_zip_extracted_files,
+#     # send_processing_completion_email,
+#     # _process_file_chunk,
+#     _process_single_file
+# )
 from backend.config import settings
 from backend.logging_config.logger import logger
 
@@ -73,6 +73,7 @@ async def process_zip_task(
     retry_backoff=300_000,  # 5 minutes
 )
 async def process_file_chunk_task(chunk, extracted_dir, batch_id, job_id, job_data, user_id, company_id):
+    from backend.upload.utils import _process_file_chunk
     if not acquire_semaphore():
         raise dramatiq.RetryLater(delay=10_000)  # Retry after 10 sec
 
@@ -108,6 +109,7 @@ def release_semaphore():
     retry_backoff=300_000,  # 5 minutes
 )
 async def process_single_file_task(file_path: str, job_id: str, user_id: str, task_id: str):
+    from backend.upload.utils import _process_single_file
     try:
         # Process the file (your existing logic)
         result = await _process_single_file(file_path, job_id, user_id)
