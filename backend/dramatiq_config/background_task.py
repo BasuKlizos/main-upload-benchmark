@@ -5,8 +5,8 @@ import redis
 
 from dramatiq.brokers.redis import RedisBroker
 from backend.upload.utils import (
-    process_zip_extracted_files,
-    send_processing_completion_email,
+    # process_zip_extracted_files,
+    # send_processing_completion_email,
     _process_file_chunk,
     _process_single_file
 )
@@ -47,6 +47,7 @@ async def process_zip_task(
     batch_directory, batch_id, job_id, user_id, company_id, send_invitations
 ):
     try:
+        from backend.upload.utils import process_zip_extracted_files, send_processing_completion_email
         logger.info(f"Started processing batch {batch_id}...")
 
         await process_zip_extracted_files(
