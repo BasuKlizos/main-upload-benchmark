@@ -51,6 +51,9 @@ RUN pip install --no-cache-dir /wheels/*
 # Copy backend folder into /app/backend/
 COPY backend/ backend/
 
+#  Create tmp directory (Make sure it exists in the container)
+RUN mkdir -p /app/backend/tmp
+
 #  Set PYTHONPATH so backend package can be found
 ENV PYTHONPATH=/app
 

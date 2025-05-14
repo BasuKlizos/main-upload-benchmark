@@ -1,31 +1,28 @@
 import dramatiq
 import asyncio
 import uuid
+import time
 import redis
 
 from dramatiq.brokers.redis import RedisBroker
 from dramatiq.middleware import Retries
-# from backend.upload.utils import (
-#     # process_zip_extracted_files,
-#     # send_processing_completion_email,
-#     # _process_file_chunk,
-#     _process_single_file
-# )
+
 from backend.config import settings
 from backend.logging_config.logger import logger
 
-# Connect to Redis broker
-broker = RedisBroker(url="redis://localhost:6379/0")
+# Redis Broker Setup
+broker = RedisBroker(url="redis://redis:6379/0")
 broker.add_middleware(Retries())
 dramatiq.set_broker(broker)
 
-# for redis 
-r = redis.Redis.from_url("redis://localhost:6379/0")
+# Redis Connection
+r = redis.Redis.from_url("redis://redis:6379/0")
+
+# Semaphore Config
 SEMAPHORE_KEY = "semaphore:file_chunks"
 MAX_CONCURRENCY = settings.MAX_CONCURRENCY or 8
 
-
-# Safe atomic acquire using Lua script
+# Lua Script for Atomic Acquire
 SEMAPHORE_LUA = """
 local current = redis.call('get', KEYS[1])
 if not current then current = 0 end
@@ -37,46 +34,6 @@ else
   return 0
 end
 """
-
-
-@dramatiq.actor(
-    actor_name="process_zip_file_task"
-)
-async def process_zip_task(
-    batch_directory, batch_id, job_id, user_id, company_id, send_invitations
-):
-    try:
-        from backend.upload.utils import process_zip_extracted_files, send_processing_completion_email
-        logger.info(f"Started processing batch {batch_id}...")
-
-        await process_zip_extracted_files(
-            extracted_dir=batch_directory,
-            batch_id=batch_id,
-            job_id=job_id,
-            user_id=user_id,
-            company_id=company_id,
-            send_invitations=send_invitations,
-        )
-
-        await send_processing_completion_email(batch_id, job_id, user_id)
-        logger.info(f"Completed processing batch {batch_id}.")
-    except Exception as e:
-        logger.error(f"Error in 'process_zip_file_task': {e}")
-        raise dramatiq.RetryLater(delay=300_000)  # retry after 5 minutes
-
-
-@dramatiq.actor(
-    actor_name="process_file_chunk_task"
-)
-async def process_file_chunk_task(chunk, extracted_dir, batch_id, job_id, job_data, user_id, company_id):
-    from backend.upload.utils import _process_file_chunk
-    if not acquire_semaphore():
-        raise dramatiq.RetryLater(delay=10_000)  # Retry after 10 sec
-
-    try:
-        await _process_file_chunk(chunk, extracted_dir, uuid.UUID(batch_id), job_id, job_data, user_id, company_id)
-    finally:
-        release_semaphore()
 
 
 def acquire_semaphore():
@@ -97,26 +54,81 @@ def release_semaphore():
             except redis.WatchError:
                 continue
 
+@dramatiq.actor(actor_name="process_zip_file_task", max_retries=3, max_backoff=5000)
+def process_zip_task(batch_directory, batch_id, job_id, user_id, company_id, send_invitations):
+    from backend.upload.utils import process_zip_extracted_files, send_processing_completion_email
+    from backend.monitor.metrices import PROCESS_DURATION, EMAIL_SENT
 
-@dramatiq.actor(
-    actor_name="process_single_file_task"
-)
-async def process_single_file_task(file_path: str, job_id: str, user_id: str, task_id: str):
+    process_start_time = time.time()
+
+    logger.info(f"Started processing batch {batch_id}...")
+
+    with PROCESS_DURATION.time():
+        try:
+            asyncio.run(process_zip_extracted_files(
+                extracted_dir=batch_directory,
+                batch_id=batch_id,
+                job_id=job_id,
+                user_id=user_id,
+                company_id=company_id,
+                send_invitations=send_invitations,
+            ))
+
+            asyncio.run(send_processing_completion_email(batch_id, job_id, user_id))
+            EMAIL_SENT.inc()
+            logger.info(f"Completed processing batch {batch_id}.")
+        except Exception as e:
+            logger.exception(f"Error in 'process_zip_file_task': {e}")
+            raise Exception(f"process_zip_file_task execution failed.")
+        
+        # Log process duration
+        process_duration = time.time() - process_start_time
+        PROCESS_DURATION.observe(process_duration)
+
+
+@dramatiq.actor(actor_name="process_file_chunk_task", max_retries=3, max_backoff=5000)
+def process_file_chunk_task(chunk, extracted_dir, batch_id, job_id, job_data, user_id, company_id):
+    from backend.upload.utils import _process_file_chunk
+    from backend.monitor.metrices import CHUNK_PROCESS_DURATION, CHUNKS_PROCESSED, CHUNKS_FAILED
+
+    if not acquire_semaphore():
+        logger.warning("Semaphore limit reached, retrying chunk...")
+        raise Exception("Semaphore limit reached, try to retry.")
+
+    with CHUNK_PROCESS_DURATION.time():
+        try:
+            asyncio.run(_process_file_chunk(
+                chunk, extracted_dir, uuid.UUID(batch_id),
+                job_id, job_data, user_id, company_id
+            ))
+            CHUNKS_PROCESSED.inc()
+        except Exception as e:
+            CHUNKS_FAILED.inc()
+            logger.error(f"Error processing chunk: {e}")
+            raise Exception(f"processing chunk execution failed.")
+        finally:
+            release_semaphore()
+
+
+
+
+@dramatiq.actor(actor_name="process_single_file_task", max_retries=3, max_backoff=5000)
+def process_single_file_task(file_path: str, job_id: str, user_id: str, task_id: str):
     from backend.upload.utils import _process_single_file
-    try:
-        # Process the file (your existing logic)
-        result = await _process_single_file(file_path, job_id, user_id)
+    from backend.monitor.metrices import FILE_PROCESS_DURATION, FILES_PROCESSED, FILES_FAILED
 
-        # Store the result in Redis (or another database)
-        result_key = f"task_result:{task_id}"
-        r.set(result_key, str(result))  # or you can store it as a JSON or dict if needed
+    result_key = f"task_result:{task_id}"
+    start = time.perf_counter()
 
-        return result
-    except Exception as e:
-        logger.error(f"Error processing file {file_path}: {str(e)}")
-        
-        # Store failure status in Redis
-        result_key = f"task_result:{task_id}"
-        r.set(result_key, "failed")
-        
-        raise dramatiq.RetryLater(delay=10_000)  # Retry after 1 minute
+    with FILE_PROCESS_DURATION.time():
+        try:
+            result = asyncio.run(_process_single_file(file_path, job_id, user_id))
+            r.set(result_key, str(result))
+            FILES_PROCESSED.inc()
+            logger.info(f"Processed file in {time.perf_counter() - start:.2f}s")
+        except Exception as e:
+            r.set(result_key, "failed")
+            FILES_FAILED.inc()
+            logger.exception(f"Error processing file {file_path}: {e}")
+            raise Exception("process_single_file_task execution failed.")
+
