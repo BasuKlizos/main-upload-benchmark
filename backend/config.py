@@ -116,12 +116,12 @@ class Settings(BaseSettings):
     TRANSFORMER_MODEL: str = config("TRANSFORMER_MODEL", cast=str, default="all-MiniLM-L6-v2")
 
     # Google OAuth Settings
-    GOOGLE_CLIENT_ID: str = config("GOOGLE_CLIENT_ID", cast=str)
-    GOOGLE_CLIENT_SECRET: str = config("GOOGLE_CLIENT_SECRET", cast=str)
+    # GOOGLE_CLIENT_ID: str = config("GOOGLE_CLIENT_ID", cast=str)
+    # GOOGLE_CLIENT_SECRET: str = config("GOOGLE_CLIENT_SECRET", cast=str)
 
     # LinkedIn OAuth Settings
-    LINKEDIN_CLIENT_ID: str = config("LINKEDIN_CLIENT_ID", cast=str)
-    LINKEDIN_CLIENT_SECRET: str = config("LINKEDIN_CLIENT_SECRET", cast=str)
+    # LINKEDIN_CLIENT_ID: str = config("LINKEDIN_CLIENT_ID", cast=str)
+    # LINKEDIN_CLIENT_SECRET: str = config("LINKEDIN_CLIENT_SECRET", cast=str)
 
     # Caller Server  URL
     CALLER_SERVER_URL: str = config("CALLER_SERVER_URL", cast=str)

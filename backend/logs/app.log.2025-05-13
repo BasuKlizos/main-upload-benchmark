@@ -1,0 +1,66 @@
+2025-05-13 11:53:18,027 - uvicorn - ERROR - Exception while running pdfinfo for D:\main-company\Projects\talentsync_helper\main_upload\backend\tmp\c56fd646-86f4-5e6e-8026-3a4f95335973\sample-local-pdf_1747117397.223614.pdf: 
+2025-05-13 11:53:18,033 - uvicorn - ERROR - Error in extract_text: 
+2025-05-13 11:53:18,177 - uvicorn - ERROR - Error processing file D:\main-company\Projects\talentsync_helper\main_upload\backend\tmp\c56fd646-86f4-5e6e-8026-3a4f95335973\sample-local-pdf_1747117397.223614.pdf: 
+Traceback (most recent call last):
+  File "D:\main-company\Projects\talentsync_helper\main_upload\backend\upload\utils.py", line 97, in _process_single_file
+    text, is_image_pdf, metadata = await extract.extract_text(file_path, user_id)
+  File "D:\main-company\Projects\talentsync_helper\main_upload\backend\upload\parse.py", line 116, in extract_text
+    result, metadata = await self._convert_pdf_to_text(file_path, txt_temp.name)
+  File "D:\main-company\Projects\talentsync_helper\main_upload\backend\upload\parse.py", line 84, in _convert_pdf_to_text
+    process = await asyncio.create_subprocess_exec(
+  File "C:\Users\Basudev Samanta\AppData\Local\Programs\Python\Python310\lib\asyncio\subprocess.py", line 218, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+  File "C:\Users\Basudev Samanta\AppData\Local\Programs\Python\Python310\lib\asyncio\base_events.py", line 1670, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+  File "C:\Users\Basudev Samanta\AppData\Local\Programs\Python\Python310\lib\asyncio\base_events.py", line 498, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+2025-05-13 11:53:24,624 - uvicorn - ERROR - Task failed: RetryError[<Future at 0x2bb67481de0 state=finished raised S3UploadFailedError>]
+NoneType: None
+2025-05-13 11:53:24,734 - uvicorn - ERROR - Error in upload batch c56fd646-86f4-5e6e-8026-3a4f95335973: 'candidate_upload_progress.html' not found in search path: 'templates'
+Traceback (most recent call last):
+  File "D:\main-company\Projects\talentsync_helper\main_upload\backend\upload\upload.py", line 222, in background_processing
+    await send_processing_completion_email(batch_id, details, job.get("title"), request)
+  File "D:\main-company\Projects\talentsync_helper\main_upload\backend\upload\utils.py", line 515, in send_processing_completion_email
+    body_html = email_operation.render_template(
+  File "D:\main-company\Projects\talentsync_helper\main_upload\backend\aws_config\aws.py", line 133, in render_template
+    template = self.env.get_template(template_name)
+  File "D:\main-company\Projects\talentsync_helper\main_upload\.venv\lib\site-packages\jinja2\environment.py", line 1016, in get_template
+    return self._load_template(name, globals)
+  File "D:\main-company\Projects\talentsync_helper\main_upload\.venv\lib\site-packages\jinja2\environment.py", line 975, in _load_template
+    template = self.loader.load(self, name, self.make_globals(globals))
+  File "D:\main-company\Projects\talentsync_helper\main_upload\.venv\lib\site-packages\jinja2\loaders.py", line 126, in load
+    source, filename, uptodate = self.get_source(environment, name)
+  File "D:\main-company\Projects\talentsync_helper\main_upload\.venv\lib\site-packages\jinja2\loaders.py", line 209, in get_source
+    raise TemplateNotFound(
+jinja2.exceptions.TemplateNotFound: 'candidate_upload_progress.html' not found in search path: 'templates'
+2025-05-13 11:53:24,741 - uvicorn - ERROR - Failed to cleanup temp directory: [WinError 3] The system cannot find the path specified: 'D:\\main-company\\Projects\\talentsync_helper\\main_upload\\backend\\tmp\\c56fd646-86f4-5e6e-8026-3a4f95335973'
+Traceback (most recent call last):
+  File "D:\main-company\Projects\talentsync_helper\main_upload\backend\upload\upload.py", line 222, in background_processing
+    await send_processing_completion_email(batch_id, details, job.get("title"), request)
+  File "D:\main-company\Projects\talentsync_helper\main_upload\backend\upload\utils.py", line 515, in send_processing_completion_email
+    body_html = email_operation.render_template(
+  File "D:\main-company\Projects\talentsync_helper\main_upload\backend\aws_config\aws.py", line 133, in render_template
+    template = self.env.get_template(template_name)
+  File "D:\main-company\Projects\talentsync_helper\main_upload\.venv\lib\site-packages\jinja2\environment.py", line 1016, in get_template
+    return self._load_template(name, globals)
+  File "D:\main-company\Projects\talentsync_helper\main_upload\.venv\lib\site-packages\jinja2\environment.py", line 975, in _load_template
+    template = self.loader.load(self, name, self.make_globals(globals))
+  File "D:\main-company\Projects\talentsync_helper\main_upload\.venv\lib\site-packages\jinja2\loaders.py", line 126, in load
+    source, filename, uptodate = self.get_source(environment, name)
+  File "D:\main-company\Projects\talentsync_helper\main_upload\.venv\lib\site-packages\jinja2\loaders.py", line 209, in get_source
+    raise TemplateNotFound(
+jinja2.exceptions.TemplateNotFound: 'candidate_upload_progress.html' not found in search path: 'templates'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "D:\main-company\Projects\talentsync_helper\main_upload\backend\upload\upload.py", line 230, in background_processing
+    shutil.rmtree(batch_directory)
+  File "C:\Users\Basudev Samanta\AppData\Local\Programs\Python\Python310\lib\shutil.py", line 749, in rmtree
+    return _rmtree_unsafe(path, onerror)
+  File "C:\Users\Basudev Samanta\AppData\Local\Programs\Python\Python310\lib\shutil.py", line 600, in _rmtree_unsafe
+    onerror(os.scandir, path, sys.exc_info())
+  File "C:\Users\Basudev Samanta\AppData\Local\Programs\Python\Python310\lib\shutil.py", line 597, in _rmtree_unsafe
+    with os.scandir(path) as scandir_it:
+FileNotFoundError: [WinError 3] The system cannot find the path specified: 'D:\\main-company\\Projects\\talentsync_helper\\main_upload\\backend\\tmp\\c56fd646-86f4-5e6e-8026-3a4f95335973'

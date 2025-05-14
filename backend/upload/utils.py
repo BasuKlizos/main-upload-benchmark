@@ -20,6 +20,7 @@ from backend.schemas.candidate import CVParseResponse
 from backend.service.ai import ai_services
 from backend.service.external import caller_api_client
 from backend.service.vectorize import vector_service
+from backend.dramatiq_config.background_task import process_file_chunk_task
 from backend.utils import EmbeddingUtils, get_current_time_utc, validate_object_id
 from bson import Binary, ObjectId
 from fastapi import HTTPException, Request, status
@@ -459,15 +460,30 @@ async def process_zip_extracted_files(
         chunks = [files[i : i + settings.CHUNK_SIZE] for i in range(0, len(files), settings.CHUNK_SIZE)]
         job_data = redis.get_json_(f"job:{job_id}")
 
-        semaphore = asyncio.Semaphore(settings.MAX_CONCURRENCY)
+        # semaphore = asyncio.Semaphore(settings.MAX_CONCURRENCY)
 
-        async def process_chunk_with_semaphore(chunk):
-            async with semaphore:
-                await _process_file_chunk(chunk, extracted_dir, batch_id, job_id, job_data, user_id, company_id)
+        # async def process_chunk_with_semaphore(chunk):
+        #     async with semaphore:
+        #         await _process_file_chunk(chunk, extracted_dir, batch_id, job_id, job_data, user_id, company_id)
 
-        await asyncio.gather(*(process_chunk_with_semaphore(chunk) for chunk in chunks))
+        # await asyncio.gather(*(process_chunk_with_semaphore(chunk) for chunk in chunks))
 
-        logger.info(f"Completed processing all chunks")
+
+        for chunk in chunks:
+            # Send to Dramatiq
+            process_file_chunk_task.send(
+                chunk,
+                extracted_dir,
+                str(batch_id),
+                job_id,
+                job_data,
+                user_id,
+                company_id,
+            )
+
+        logger.info(f"Dispatched {len(chunks)} file chunks to workers")
+
+        # logger.info(f"Completed processing all chunks")
 
         asyncio.create_task(_process_and_vectorize_candidates_batch(batch_id, job_id, company_id, user_id, send_invitations))
 
