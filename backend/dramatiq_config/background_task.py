@@ -4,6 +4,7 @@ import uuid
 import redis
 
 from dramatiq.brokers.redis import RedisBroker
+from dramatiq.middleware import Retries
 # from backend.upload.utils import (
 #     # process_zip_extracted_files,
 #     # send_processing_completion_email,
@@ -15,6 +16,7 @@ from backend.logging_config.logger import logger
 
 # Connect to Redis broker
 broker = RedisBroker(url="redis://localhost:6379/0")
+broker.add_middleware(Retries())
 dramatiq.set_broker(broker)
 
 # for redis 
@@ -38,10 +40,7 @@ end
 
 
 @dramatiq.actor(
-    actor_name="process_zip_file_task",
-    max_retries=5,
-    time_limit=600_000,  # 10 minutes
-    retry_backoff=300_000,  # 5 minutes
+    actor_name="process_zip_file_task"
 )
 async def process_zip_task(
     batch_directory, batch_id, job_id, user_id, company_id, send_invitations
@@ -67,10 +66,7 @@ async def process_zip_task(
 
 
 @dramatiq.actor(
-    actor_name="process_file_chunk_task",
-    max_retries=5,
-    time_limit=600_000,  # 10 minutes
-    retry_backoff=300_000,  # 5 minutes
+    actor_name="process_file_chunk_task"
 )
 async def process_file_chunk_task(chunk, extracted_dir, batch_id, job_id, job_data, user_id, company_id):
     from backend.upload.utils import _process_file_chunk
@@ -103,10 +99,7 @@ def release_semaphore():
 
 
 @dramatiq.actor(
-    actor_name="process_single_file_task",
-    max_retries=5,
-    time_limit=600_000,  # 10 minutes
-    retry_backoff=300_000,  # 5 minutes
+    actor_name="process_single_file_task"
 )
 async def process_single_file_task(file_path: str, job_id: str, user_id: str, task_id: str):
     from backend.upload.utils import _process_single_file
