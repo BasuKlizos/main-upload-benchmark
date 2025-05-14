@@ -14,7 +14,7 @@ from backend.config import settings
 from backend.logging_config.logger import logger
 
 # Connect to Redis broker
-broker = RedisBroker("redis://localhost:6379/0")
+broker = RedisBroker(url="redis://localhost:6379/0")
 dramatiq.set_broker(broker)
 
 # for redis 
