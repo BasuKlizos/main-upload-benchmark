@@ -283,7 +283,6 @@ async def _process_file_chunk(
     #     elif isinstance(result, CVParseResponse):
     #         valid_results.append(result)
 
-    
     # Poll for results (or implement a callback mechanism)
     for task_id in task_ids:
         # You can adjust the timeout based on your application needs
@@ -402,7 +401,7 @@ async def _fetch_job_data(job_id: str) -> dict:
 async def _fetch_batch_candidates(batch_id: uuid.UUID, company_id: str) -> list:
     if isinstance(batch_id, str):
         batch_id = uuid.UUID(batch_id)
-        
+
     return await candidates.find(
         {"batch_id": Binary.from_uuid(batch_id), "company_id": ObjectId(company_id)},
         {
@@ -572,6 +571,7 @@ async def _process_and_vectorize_candidates_batch(
     company_id: str,
     user_id: str,
     should_send_invitations: bool = False,
+    extracted_dir: Optional[str] = None,
 ):
     """
     Orchestrates candidate processing: fetching, vectorizing, question generating, notifying, and batch finalizing.
@@ -610,6 +610,17 @@ async def _process_and_vectorize_candidates_batch(
 
     except Exception as e:
         logger.exception(f"Error processing batch {batch_id}: {str(e)}")
+
+    finally:
+        try:
+            shutil.rmtree(os.path.dirname(extracted_dir))
+            # if os.path.exists(extracted_dir):
+            #     shutil.rmtree(extracted_dir)
+            logger.info(f"Successfully cleaned up directory: {extracted_dir}")
+        except Exception as e:
+            logger.error(
+                f"Failed to cleanup directory {extracted_dir}: {e}", exc_info=True
+            )
 
 
 async def process_zip_extracted_files(
@@ -658,24 +669,35 @@ async def process_zip_extracted_files(
 
         asyncio.create_task(
             _process_and_vectorize_candidates_batch(
-                str(batch_id), job_id, company_id, user_id, send_invitations
+                str(batch_id),
+                job_id,
+                company_id,
+                user_id,
+                send_invitations,
+                extracted_dir,
             )
         )
+    except Exception as e:
+        logger.error(f"Unexpected error of process_zip_extracted_files: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error of process_zip_extracted_files: {e}",
+        )
 
-    finally:
-        try:
-            # shutil.rmtree(os.path.dirname(extracted_dir))
-            if os.path.exists(extracted_dir):
-                shutil.rmtree(extracted_dir)
-            logger.info(f"Successfully cleaned up directory: {extracted_dir}")
-        except Exception as e:
-            logger.error(
-                f"Failed to cleanup directory {extracted_dir}: {e}", exc_info=True
-            )
+    # finally:
+    #     try:
+    #         shutil.rmtree(os.path.dirname(extracted_dir))
+    #         # if os.path.exists(extracted_dir):
+    #         #     shutil.rmtree(extracted_dir)
+    #         logger.info(f"Successfully cleaned up directory: {extracted_dir}")
+    #     except Exception as e:
+    #         logger.error(
+    #             f"Failed to cleanup directory {extracted_dir}: {e}", exc_info=True
+    #         )
 
 
 async def _update_batch_status(batch_id: uuid.UUID):
-    
+
     batch = await batches.find_one_and_update(
         {"batch_id": Binary.from_uuid(batch_id)},
         {"$set": {"status": "completed", "end_time": get_current_time_utc()}},
@@ -685,11 +707,11 @@ async def _update_batch_status(batch_id: uuid.UUID):
 
 
 async def send_processing_completion_email(
-    batch_id: uuid.UUID, 
-    user_details: dict, 
-    job_title: str, 
-    # request:Request, 
-    origin: str
+    batch_id: uuid.UUID,
+    user_details: dict,
+    job_title: str,
+    # request:Request,
+    origin: str,
 ):
 
     batch = await _update_batch_status(batch_id)
