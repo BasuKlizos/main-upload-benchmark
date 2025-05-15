@@ -400,6 +400,9 @@ async def _fetch_job_data(job_id: str) -> dict:
 
 
 async def _fetch_batch_candidates(batch_id: uuid.UUID, company_id: str) -> list:
+    if isinstance(batch_id, str):
+        batch_id = uuid.UUID(batch_id)
+        
     return await candidates.find(
         {"batch_id": Binary.from_uuid(batch_id), "company_id": ObjectId(company_id)},
         {
@@ -655,13 +658,15 @@ async def process_zip_extracted_files(
 
         asyncio.create_task(
             _process_and_vectorize_candidates_batch(
-                batch_id, job_id, company_id, user_id, send_invitations
+                str(batch_id), job_id, company_id, user_id, send_invitations
             )
         )
 
     finally:
         try:
-            shutil.rmtree(os.path.dirname(extracted_dir))
+            # shutil.rmtree(os.path.dirname(extracted_dir))
+            if os.path.exists(extracted_dir):
+                shutil.rmtree(extracted_dir)
             logger.info(f"Successfully cleaned up directory: {extracted_dir}")
         except Exception as e:
             logger.error(
@@ -670,6 +675,7 @@ async def process_zip_extracted_files(
 
 
 async def _update_batch_status(batch_id: uuid.UUID):
+    
     batch = await batches.find_one_and_update(
         {"batch_id": Binary.from_uuid(batch_id)},
         {"$set": {"status": "completed", "end_time": get_current_time_utc()}},
@@ -679,8 +685,13 @@ async def _update_batch_status(batch_id: uuid.UUID):
 
 
 async def send_processing_completion_email(
-    batch_id: uuid.UUID, user_details: dict, job_title: str, request: Request
+    batch_id: uuid.UUID, 
+    user_details: dict, 
+    job_title: str, 
+    # request:Request, 
+    origin: str
 ):
+
     batch = await _update_batch_status(batch_id)
 
     # Get batch Name and upload count
@@ -711,7 +722,8 @@ async def send_processing_completion_email(
             "batch_name": batch_name,
             "upload_count": upload_count,
             "total_duration": total_time_taken,
-            "batch_link": f"{request.headers.get('origin')}/candidates/list?type=batch&batch_id={batch_id}&batch_name={quote(batch_name)}",
+            # "batch_link": f"{request.headers.get('origin')}/candidates/list?type=batch&batch_id={batch_id}&batch_name={quote(batch_name)}",
+            "batch_link": f"{origin}/candidates/list?type=batch&batch_id={batch_id}&batch_name={quote(batch_name)}",
         },
     )
 

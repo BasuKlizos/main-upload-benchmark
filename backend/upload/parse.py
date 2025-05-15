@@ -62,7 +62,7 @@ class _ExtractTextFromFile:
         """Convert PDF file to text using pdftotext utility and log number of pages."""
         if not os.path.isfile(pdf_file_path):
             logger.error("PDF file does not exist: %s", pdf_file_path)
-            return "error: File not found"
+            return "error: File not found", {}
 
         # Step 1: Get number of pages metadata using `pdfinfo`
         metadata = await self._get_pdf_metadata(pdf_file_path)
@@ -100,11 +100,11 @@ class _ExtractTextFromFile:
             error_message = e.stderr.lower()
             if "warning" in error_message:
                 if "may not be a pdf file" in error_message:
-                    return "error: Malformed pdf file"
+                    return "error: Malformed pdf file", {}
                 logger.warning("Warning in pdf_to_text conversion: %s", error_message)
             else:
                 logger.error("Error converting pdf to text: %s", error_message)
-                return "error_converting_pdf_to_text"
+                return "error_converting_pdf_to_text", {}
 
     async def extract_text(self, file_path: str, user_id: str) -> tuple[str, bool, dict]:
         """Extract text from Files (pdf or docx)"""

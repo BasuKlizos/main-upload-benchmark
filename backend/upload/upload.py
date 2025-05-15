@@ -4,8 +4,9 @@ import time
 import os.path
 import shutil
 import zipfile
-from typing import List
+import uuid
 
+from typing import List
 from bson import Binary, ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -161,6 +162,12 @@ async def upload_candidates(
                                 dest_path = os.path.join(batch_directory, dest_filename)
                                 shutil.move(src_path, dest_path)
 
+                                logger.info(f"File moved: {dest_path}")
+                                if not os.path.exists(dest_path):
+                                    logger.error(f"File not found after saving: {dest_path}")
+
+
+
                     # Clean up temporary extraction directory
                     shutil.rmtree(temp_extract_dir)
 
@@ -169,10 +176,10 @@ async def upload_candidates(
                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 ]:
 
-                    pdf_file_count += int(file.content_type == "application/pdf")
-                    docx_file_count += int(file.content_type.endswith("document"))
-                    # pdf_file_count +=1
-                    # docx_file_count +=1
+                    # pdf_file_count += int(file.content_type == "application/pdf")
+                    # docx_file_count += int(file.content_type.endswith("document"))
+                    pdf_file_count +=1
+                    docx_file_count +=1
 
                     PDF_FILES.inc()
                     DOCX_FILES.inc()
@@ -273,16 +280,19 @@ async def upload_candidates(
 
             # asyncio.create_task(background_processing())
 
-            company_id = str(details.get("company_id"))
-            user_id = str(details.get("user_id"))
+            # company_id = details.get("company_id")
+            # user_id = details.get("user_id")
+            
+            origin = request.headers.get("origin") if request else None
 
             process_zip_task.send(
-                batch_directory,
-                str(batch_id),
-                str(job_id),
-                user_id,
-                company_id,
-                send_invitations,
+                batch_directory=batch_directory,
+                batch_id=str(batch_id),
+                job_id=job_id,
+                user_id=details.get("user_id"),
+                company_id=details.get("company_id"),
+                send_invitations=send_invitations,
+                origin=origin
             )
 
             return response
@@ -291,6 +301,7 @@ async def upload_candidates(
             logger.exception(f"Error in upload batch {batch_id}: {str(e)}")
             # Cleanup on error
             try:
+                # if os.path.exists(batch_directory) and not os.listdir(batch_directory):
                 shutil.rmtree(batch_directory)
                 logger.debug(
                     f"Cleaned up temp directory after error: {batch_directory}"
