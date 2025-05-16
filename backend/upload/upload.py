@@ -36,6 +36,7 @@ from backend.monitor.metrices import (
     UPLOAD_REQUESTS,
     UPLOAD_SUCCESS,
     UPLOAD_FAILURE,
+    UPLOAD_DURATION,
     FILE_COUNT,
     ZIP_FILES,
     CREATED_FILES,
@@ -230,11 +231,6 @@ async def upload_candidates(
         #     process_duration = time.time() - process_start_time
         #     PROCESS_DURATION.observe(process_duration)
 
-        
-        # Log upload duration
-        # upload_duration = time.time() - start_time
-        # UPLOAD_DURATION.observe(upload_duration)
-
         # asyncio.create_task(background_processing())
         
         
@@ -250,6 +246,10 @@ async def upload_candidates(
             send_invitations=send_invitations,
             origin=origin
         )
+
+        # Log upload duration
+        upload_duration = time.time() - start_time
+        UPLOAD_DURATION.observe(upload_duration)
         
         return response
 

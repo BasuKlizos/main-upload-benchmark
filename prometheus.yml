@@ -5,6 +5,10 @@ scrape_configs:
   - job_name: 'backend_service'
     static_configs:
       - targets: ['backend_service:8000']
+  
+  - job_name: 'dramatiq-worker'
+    static_configs:
+      - targets: ['localhost:8001']
 
   # - job_name: 'mongodb_exporter'
   #   static_configs:

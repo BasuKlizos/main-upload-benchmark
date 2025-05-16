@@ -27,6 +27,8 @@ from fastapi import HTTPException, Request, status
 from pymongo import ReplaceOne
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 
+from backend.monitor.metrices import CREATED_FILES
+
 # Collections
 candidates = collection("candidates")
 candidates_errors = collection("candidates_errors")
@@ -456,6 +458,8 @@ async def process_zip_extracted_files(
     try:
         files = [f for f in os.listdir(extracted_dir) if f.endswith((".pdf", ".docx"))]
         logger.info(f"Found {len(files)} files to process")
+
+        CREATED_FILES.inc(len(files))
 
         chunks = [files[i : i + settings.CHUNK_SIZE] for i in range(0, len(files), settings.CHUNK_SIZE)]
         job_data = redis.get_json_(f"job:{job_id}")
