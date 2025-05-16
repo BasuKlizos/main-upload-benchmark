@@ -74,11 +74,13 @@ async def upload_candidates(
 ) -> JSONResponse:
     
     start_time = time.time()
+    logger.info("Upload endpoint triggered")
     UPLOAD_REQUESTS.inc()
 
-
+    logger.debug(f"Received batch_name: {batch_name} for job_id: {job_id}")
     # Check if batch_name is already taken
     if await batches.find_one({"batch_name": batch_name}):
+        logger.warning(f"Batch name already taken: {batch_name}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Batch name already taken",
@@ -86,15 +88,17 @@ async def upload_candidates(
 
     # Get job data
     job = await get_job_data(job_id)
+    logger.debug(f"Fetched job data: {job}")
 
     # Parse Role and User Details form UserData
     details, _ = user_data
+    logger.debug(f"User details: {details}")
 
     batch_id = create_batch_id()
     logger.info(f"Starting new upload batch: {batch_id}")
 
     batch_directory = os.path.join(get_temp_path(), str(batch_id))
-    logger.info(f"Temp directory: {batch_directory}")
+    logger.info(f"Creating temp directory: {batch_directory}")
 
     try:
         os.makedirs(batch_directory, exist_ok=True)
@@ -105,7 +109,7 @@ async def upload_candidates(
         unsupported_file_count = 0
 
         for file in files:
-            logger.info(f"Processing file: {file.filename}")
+            logger.info(f"Processing uploaded file: {file.filename}")
             FILE_COUNT.inc()
             if file.content_type not in [
                 "application/zip",
@@ -113,7 +117,7 @@ async def upload_candidates(
                 "application/pdf",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             ]:
-                logger.error(f"Invalid file type for {file.filename}: {file.content_type}")
+                logger.error(f"Unsupported file type: {file.filename} -> {file.content_type}")
                 
                 unsupported_file_count += 1
                 UNSUPPORTED_FILES.inc()
@@ -125,7 +129,7 @@ async def upload_candidates(
 
             # Check file type and process accordingly
             if file.content_type in ["application/zip", "application/x-zip-compressed"]:
-                
+                logger.debug(f"ZIP file detected: {file.filename}")
                 zip_file_count += 1
                 ZIP_FILES.inc()
 
@@ -147,12 +151,14 @@ async def upload_candidates(
                             dest_filename = f"{base}_{get_current_time_utc().timestamp()}{ext}"
                             dest_path = os.path.join(batch_directory, dest_filename)
                             shutil.move(src_path, dest_path)
+                            logger.debug(f"Moved file from {src_path} to {dest_path}")
 
                 # Clean up temporary extraction directory
                 shutil.rmtree(temp_extract_dir)
+                logger.debug(f"Cleaned up temporary ZIP extraction directory: {temp_extract_dir}")
 
             elif file.content_type in ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
-                
+                logger.debug(f"Non-ZIP file detected: {file.filename}")
                 pdf_file_count += 1
                 docx_file_count += 1
                 PDF_FILES.inc()
@@ -164,6 +170,7 @@ async def upload_candidates(
                 file_path = os.path.join(batch_directory, dest_filename)
                 with open(file_path, "wb") as f:
                     f.write(await file.read())
+                logger.debug(f"Saved file to: {file_path}")
             else:
                 
                 unsupported_file_count += 1
@@ -174,6 +181,7 @@ async def upload_candidates(
 
         # Get the count of files in the batch directory
         file_count = len([f for f in os.listdir(batch_directory) if f.lower().endswith((".pdf", ".docx"))])
+        logger.info(f"Total valid files to process: {file_count}")
 
         # Insert batch record and update job count before background processing
         await batches.insert_one(
@@ -188,11 +196,13 @@ async def upload_candidates(
                 "start_time": get_current_time_utc(),
             }
         )
+        logger.debug("Inserted batch metadata to database") 
 
         await jobs.update_one(
             {"_id": ObjectId(job_id)},
             {"$set": {"updated_at": get_current_time_utc()}, "$inc": {"selection_progress.total_candidate_count": file_count}},
         )
+        logger.debug("Updated job record with candidate count")
 
         # Create response before background processing
         response = JSONResponse(
@@ -246,7 +256,8 @@ async def upload_candidates(
         
         
         origin = request.headers.get("origin") if request else None
-
+        logger.debug(f"Sending background task with origin: {origin}") 
+        
         process_zip_task.send(
             batch_directory=batch_directory,
             batch_id=str(batch_id),

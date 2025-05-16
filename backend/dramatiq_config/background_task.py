@@ -88,7 +88,9 @@ def process_zip_task(
 
     batch_uuid = get_uuid(batch_id)
 
-    logger.info(f"Started processing batch {batch_id}...")
+    logger.info(f"[Batch {batch_id}] Starting ZIP processing task...")
+    logger.debug(f"[Batch {batch_id}] Params - job_id: {job_id}, user_id: {user_id}, send_invitations: {send_invitations}")
+    
     process_start_time = time.time()
 
     with PROCESS_DURATION.time():
@@ -112,6 +114,7 @@ def process_zip_task(
                     send_invitations=send_invitations,
                 )
             )
+            logger.info(f"[Batch {batch_id}] ZIP processing completed successfully.")
 
             # async_to_sync(send_processing_completion_email)(
             #     batch_uuid, job_id, user_id, origin
@@ -123,7 +126,7 @@ def process_zip_task(
 
             # send_email_task.send(batch_id, job_id, user_id, origin)
             # EMAIL_SENT.inc()
-            logger.info(f"Completed processing batch {batch_id}.")
+            # logger.info(f"Completed processing batch {batch_id}.")
 
         except Exception as e:
             logger.exception(f"Error in 'process_zip_file_task': {e}")
@@ -150,6 +153,8 @@ def process_file_chunk_task(
         CHUNKS_PROCESSED,
         CHUNKS_FAILED,
     )
+
+    logger.info(f"[Batch {batch_id}] Starting chunk processing with {len(chunk)} files.")  # -> log
 
     chunk_counter_key = f"chunk_counter:{batch_id}"
 
@@ -182,6 +187,7 @@ def process_file_chunk_task(
             )
 
             CHUNKS_PROCESSED.inc()
+            logger.info(f"[Batch {batch_id}] Successfully processed chunk of {len(chunk)} files.")
         except Exception as e:
             CHUNKS_FAILED.inc()
             logger.error(f"Error processing chunk: {e}")
@@ -211,13 +217,15 @@ def process_single_file_task(file_path: str, job_id: str, user_id: str, task_id:
     result_key = f"task_result:{task_id}"
     start = time.perf_counter()
 
+    logger.info(f"[Task {task_id}] Processing single file: {file_path}") 
+
     with FILE_PROCESS_DURATION.time():
         try:
             result = asyncio.run(_process_single_file(file_path, job_id, user_id))
             # result = async_to_sync(_process_single_file)(file_path, job_id, user_id)
             r.set(result_key, str(result))
             FILES_PROCESSED.inc()
-            logger.info(f"Processed file in {time.perf_counter() - start:.2f}s")
+            logger.info(f"[Task {task_id}] File processed successfully in {time.perf_counter() - start:.2f}s")
         except Exception as e:
             r.set(result_key, "failed")
             FILES_FAILED.inc()
