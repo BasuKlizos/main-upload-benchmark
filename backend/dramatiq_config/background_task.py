@@ -8,10 +8,8 @@ import shutil
 
 
 from typing import List
-from fastapi import Request
 from dramatiq.brokers.redis import RedisBroker
 from dramatiq.middleware import Retries
-from asgiref.sync import async_to_sync
 
 from backend.config import settings
 from backend.logging_config.logger import logger

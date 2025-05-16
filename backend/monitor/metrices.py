@@ -15,3 +15,13 @@ UPLOAD_DURATION = Histogram("upload_duration_seconds", "Upload request duration"
 PROCESS_DURATION = Histogram("batch_process_duration_seconds", "Batch processing duration")
 
 EMAIL_SENT = Counter("email_sent_total", "Emails sent after processing")
+
+# File/Chunk Processing
+FILE_PROCESS_DURATION = Histogram("file_process_duration_seconds", "Time taken to process a single file")
+CHUNK_PROCESS_DURATION = Histogram("chunk_process_duration_seconds", "Time taken to process a file chunk")
+
+FILES_PROCESSED = Counter("files_processed_total", "Total number of files processed")
+FILES_FAILED = Counter("files_failed_total", "Total number of files that failed processing")
+
+CHUNKS_PROCESSED = Counter("chunks_processed_total", "Total number of file chunks processed")
+CHUNKS_FAILED = Counter("chunks_failed_total", "Total number of file chunks that failed")
