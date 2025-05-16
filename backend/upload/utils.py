@@ -491,6 +491,7 @@ async def process_zip_extracted_files(
             finally:
                 with contextlib.suppress(FileNotFoundError):
                     shutil.rmtree(extracted_dir)
+                    # shutil.rmtree(os.path.dirname(extracted_dir))
                     logger.info(f"Successfully cleaned up directory: {extracted_dir}")
 
         asyncio.create_task(run_and_cleanup())
