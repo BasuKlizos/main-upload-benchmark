@@ -319,7 +319,7 @@ async def upload_candidates(
             )
     except Exception as e:
         print(f"unexpected error: {e}")
-        return HTTPException(
+        raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unexpected error: {e}",
         )
