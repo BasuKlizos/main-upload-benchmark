@@ -1,6 +1,7 @@
 import asyncio
 import os.path
 import random
+import contextlib
 import shutil
 import string
 import uuid
@@ -469,15 +470,30 @@ async def process_zip_extracted_files(
 
         logger.info(f"Completed processing all chunks")
 
-        asyncio.create_task(_process_and_vectorize_candidates_batch(batch_id, job_id, company_id, user_id, send_invitations))
+    #     asyncio.create_task(_process_and_vectorize_candidates_batch(batch_id, job_id, company_id, user_id, send_invitations))
 
-    finally:
-        try:
-            shutil.rmtree(os.path.dirname(extracted_dir))
-            logger.info(f"Successfully cleaned up directory: {extracted_dir}")
-        except Exception as e:
-            logger.error(f"Failed to cleanup directory {extracted_dir}: {e}", exc_info=True)
+    # finally:
+    #     try:
+    #         shutil.rmtree(os.path.dirname(extracted_dir))
+    #         logger.info(f"Successfully cleaned up directory: {extracted_dir}")
+    #     except Exception as e:
+    #         logger.error(f"Failed to cleanup directory {extracted_dir}: {e}", exc_info=True)
+    # Wait for background task to finish, then cleanup
+    
+    except Exception as e:
+        logger.error(f"Error during processing files from {extracted_dir}: {e}", exc_info=True)
+        raise
 
+    else:
+        async def run_and_cleanup():
+            try:
+                await _process_and_vectorize_candidates_batch(batch_id, job_id, company_id, user_id, send_invitations)
+            finally:
+                with contextlib.suppress(FileNotFoundError):
+                    shutil.rmtree(extracted_dir)
+                    logger.info(f"Successfully cleaned up directory: {extracted_dir}")
+
+        asyncio.create_task(run_and_cleanup())
 
 async def _update_batch_status(batch_id: uuid.UUID):
     batch = await batches.find_one_and_update(

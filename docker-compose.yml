@@ -15,6 +15,10 @@ services:
       - REDIS_HOST=redis
     env_file:
       - .env
+    volumes:
+      - .env:/app/.env
+      - ./backend/templates:/app/backend/templates
+      - ./backend/tmp:/app/backend/tmp
     networks:
       - talentsync_network
 
@@ -28,17 +32,17 @@ services:
     networks:
       - talentsync_network
 
-  mongodb_exporter:
-    image: bitnami/mongodb-exporter:latest
-    container_name: mongodb_exporter
-    environment:
-      - MONGODB_URI=mongodb://mongodb:27017
-    ports:
-      - "9216:9216"
-    depends_on:
-      - mongodb
-    networks:
-      - talentsync_network
+  # mongodb_exporter:
+  #   image: bitnami/mongodb-exporter:latest
+  #   container_name: mongodb_exporter
+  #   environment:
+  #     - MONGODB_URI=mongodb://mongodb:27017
+  #   ports:
+  #     - "9216:9216"
+  #   depends_on:
+  #     - mongodb
+  #   networks:
+  #     - talentsync_network
 
   redis:
     image: redis/redis-stack:latest
@@ -56,16 +60,16 @@ services:
       timeout: 5s
       retries: 5
 
-  redis_exporter:
-    image: oliver006/redis_exporter:latest
-    container_name: redis_exporter
-    command: --redis.addr=redis://redis:6379
-    ports:
-      - "9121:9121"
-    depends_on:
-      - redis
-    networks:
-      - talentsync_network
+  # redis_exporter:
+  #   image: oliver006/redis_exporter:latest
+  #   container_name: redis_exporter
+  #   command: --redis.addr=redis://redis:6379
+  #   ports:
+  #     - "9121:9121"
+  #   depends_on:
+  #     - redis
+  #   networks:
+  #     - talentsync_network
 
   prometheus:
     image: prom/prometheus
