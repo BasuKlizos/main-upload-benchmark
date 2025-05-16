@@ -4,6 +4,8 @@ from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings
 from starlette.config import Config
 
+from backend.logging_config.logger import logger
+
 config = Config(env_file=".env")
 
 
@@ -94,6 +96,7 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = config("OPENAI_MODEL", cast=str, default="gpt-4o-mini")
     OPENAI_STT_MODEL: str = config("OPENAI_STT_MODEL", cast=str, default="whisper-1")
     OPENAI_EMBEDDING_MODEL: str = config("OPENAI_EMBEDDING_MODEL", cast=str, default="text-embedding-ada-002")
+    logger.info(f"Openai api key: {OPENAI_API_KEY}")
 
     # # FreJun API Creds
     # FREJUN_API_KEY: str = config("FREJUN_API_KEY", cast=str)

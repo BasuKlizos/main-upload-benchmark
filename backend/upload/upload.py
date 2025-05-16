@@ -6,11 +6,8 @@ import shutil
 import zipfile
 from typing import List
 
-from backend.api.deps import PermissionChecker
 from backend.upload.utils import (
     get_job_data,
-    process_zip_extracted_files,
-    send_processing_completion_email,
 )
 from backend.db_config.db import collection
 from backend.logging_config.logger import logger
@@ -41,12 +38,8 @@ from backend.monitor.metrices import (
     UPLOAD_FAILURE,
     FILE_COUNT,
     ZIP_FILES,
-    PDF_FILES,
-    DOCX_FILES,
+    CREATED_FILES,
     UNSUPPORTED_FILES,
-    UPLOAD_DURATION,
-    PROCESS_DURATION,
-    EMAIL_SENT
 )
 
 router = APIRouter()
@@ -102,11 +95,6 @@ async def upload_candidates(
 
     try:
         os.makedirs(batch_directory, exist_ok=True)
-        
-        zip_file_count = 0
-        pdf_file_count = 0
-        docx_file_count = 0
-        unsupported_file_count = 0
 
         for file in files:
             logger.info(f"Processing uploaded file: {file.filename}")
@@ -118,8 +106,7 @@ async def upload_candidates(
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             ]:
                 logger.error(f"Unsupported file type: {file.filename} -> {file.content_type}")
-                
-                unsupported_file_count += 1
+
                 UNSUPPORTED_FILES.inc()
                 
                 raise HTTPException(
@@ -130,7 +117,6 @@ async def upload_candidates(
             # Check file type and process accordingly
             if file.content_type in ["application/zip", "application/x-zip-compressed"]:
                 logger.debug(f"ZIP file detected: {file.filename}")
-                zip_file_count += 1
                 ZIP_FILES.inc()
 
                 contents = await file.read()
@@ -159,10 +145,7 @@ async def upload_candidates(
 
             elif file.content_type in ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
                 logger.debug(f"Non-ZIP file detected: {file.filename}")
-                pdf_file_count += 1
-                docx_file_count += 1
-                PDF_FILES.inc()
-                DOCX_FILES.inc()
+                CREATED_FILES.inc()
 
                 base, ext = os.path.splitext(file.filename)
                 # Use timestamp to ensure uniqueness
@@ -257,7 +240,7 @@ async def upload_candidates(
         
         origin = request.headers.get("origin") if request else None
         logger.debug(f"Sending background task with origin: {origin}") 
-        
+
         process_zip_task.send(
             batch_directory=batch_directory,
             batch_id=str(batch_id),

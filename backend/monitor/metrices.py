@@ -7,8 +7,9 @@ UPLOAD_FAILURE = Counter("upload_failure_total", "Total failed uploads")
 
 FILE_COUNT = Counter("files_uploaded_total", "Total number of files uploaded")
 ZIP_FILES = Counter("zip_files_uploaded_total", "Total ZIP files uploaded")
-PDF_FILES = Counter("pdf_files_uploaded_total", "Total PDF files uploaded")
-DOCX_FILES = Counter("docx_files_uploaded_total", "Total DOCX files uploaded")
+# PDF_FILES = Counter("pdf_files_uploaded_total", "Total PDF files uploaded")
+# DOCX_FILES = Counter("docx_files_uploaded_total", "Total DOCX files uploaded")
+CREATED_FILES = Counter("created_files", "Number of files created for processing (PDF or DOCX)")
 UNSUPPORTED_FILES = Counter("unsupported_files_total", "Total unsupported files attempted")
 
 UPLOAD_DURATION = Histogram("upload_duration_seconds", "Upload request duration")
