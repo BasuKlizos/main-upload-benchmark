@@ -70,6 +70,28 @@ services:
   #     - redis
   #   networks:
   #     - talentsync_network
+  
+  dramatiq_worker:
+    build:
+      context: . # Assuming Dockerfile is in backend/
+      dockerfile: backend/Dockerfile
+    container_name: dramatiq_worker
+    command: dramatiq backend.dramatiq_config.background_task --processes 1 --threads 4
+    depends_on:
+      - redis
+      - mongodb
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MONGO_URI=mongodb://mongodb:27017
+      - REDIS_HOST=redis
+    env_file:
+      - .env
+    volumes:
+      - .env:/app/.env
+      - ./backend/templates:/app/backend/templates
+      - ./backend/tmp:/app/backend/tmp
+    networks:
+      - talentsync_network
 
   prometheus:
     image: prom/prometheus

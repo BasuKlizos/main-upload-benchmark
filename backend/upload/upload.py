@@ -15,6 +15,7 @@ from backend.upload.utils import (
 from backend.db_config.db import collection
 from backend.logging_config.logger import logger
 from backend.security.perms import Permission
+from backend.dramatiq_config.background_task import process_zip_task
 from backend.api.deps import get_user_details_factory
 from backend.types_ import UserData
 from backend.utils import (
@@ -204,44 +205,58 @@ async def upload_candidates(
         )
 
         # Process all extracted directories in background
-        async def background_processing():
-            process_start_time = time.time()
-            try:
-                if os.path.exists(batch_directory):
-                    logger.info(f"Starting background processing for directory: {batch_directory}")
-                    await process_zip_extracted_files(
-                        extracted_dir=batch_directory,
-                        batch_id=batch_id,
-                        job_id=job_id,
-                        user_id=details.get("user_id"),
-                        company_id=details.get("company_id"),
-                        send_invitations=send_invitations,
-                    )
+        # async def background_processing():
+        #     process_start_time = time.time()
+        #     try:
+        #         if os.path.exists(batch_directory):
+        #             logger.info(f"Starting background processing for directory: {batch_directory}")
+        #             await process_zip_extracted_files(
+        #                 extracted_dir=batch_directory,
+        #                 batch_id=batch_id,
+        #                 job_id=job_id,
+        #                 user_id=details.get("user_id"),
+        #                 company_id=details.get("company_id"),
+        #                 send_invitations=send_invitations,
+        #             )
 
-                    # Send Processing completion email to user
-                    await send_processing_completion_email(batch_id, details, job.get("title"), request)
-                    EMAIL_SENT.inc()
-                else:
-                    logger.error(f"Extracted directory does not exist: {batch_directory}")
+        #             # Send Processing completion email to user
+        #             await send_processing_completion_email(batch_id, details, job.get("title"), request)
+        #             EMAIL_SENT.inc()
+        #         else:
+        #             logger.error(f"Extracted directory does not exist: {batch_directory}")
 
-            except Exception as e:
-                logger.exception(f"Error in upload batch {batch_id}: {str(e)}")
-                try:
-                    shutil.rmtree(batch_directory)
-                    logger.debug(f"Cleaned up temp directory after error: {batch_directory}")
-                except Exception as cleanup_error:
-                    logger.error(f"Failed to cleanup temp directory: {cleanup_error}", exc_info=True)
+        #     except Exception as e:
+        #         logger.exception(f"Error in upload batch {batch_id}: {str(e)}")
+        #         try:
+        #             shutil.rmtree(batch_directory)
+        #             logger.debug(f"Cleaned up temp directory after error: {batch_directory}")
+        #         except Exception as cleanup_error:
+        #             logger.error(f"Failed to cleanup temp directory: {cleanup_error}", exc_info=True)
 
-            # Log process duration
-            process_duration = time.time() - process_start_time
-            PROCESS_DURATION.observe(process_duration)
+        #     # Log process duration
+        #     process_duration = time.time() - process_start_time
+        #     PROCESS_DURATION.observe(process_duration)
 
         
         # Log upload duration
-        upload_duration = time.time() - start_time
-        UPLOAD_DURATION.observe(upload_duration)
+        # upload_duration = time.time() - start_time
+        # UPLOAD_DURATION.observe(upload_duration)
 
-        asyncio.create_task(background_processing())
+        # asyncio.create_task(background_processing())
+        
+        
+        origin = request.headers.get("origin") if request else None
+
+        process_zip_task.send(
+            batch_directory=batch_directory,
+            batch_id=str(batch_id),
+            job_id=job_id,
+            user_id=details.get("user_id"),
+            company_id=details.get("company_id"),
+            send_invitations=send_invitations,
+            origin=origin
+        )
+        
         return response
 
     except Exception as e:

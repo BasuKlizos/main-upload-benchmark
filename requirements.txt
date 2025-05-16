@@ -108,6 +108,8 @@ dnspython==2.7.0
     #   -r .\requirements.in
     #   email-validator
     #   pymongo
+dramatiq==1.17.1
+    # via -r .\requirements.in
 ecdsa==0.19.1
     # via
     #   -r .\requirements.in
@@ -293,6 +295,7 @@ pluggy==1.5.0
 prometheus-client==0.21.1
     # via
     #   -r .\requirements.in
+    #   dramatiq
     #   prometheus-fastapi-instrumentator
 prometheus-fastapi-instrumentator==7.1.0
     # via -r .\requirements.in
