@@ -13,10 +13,11 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - MONGO_URI=mongodb://mongodb:27017
       - REDIS_HOST=redis
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
     env_file:
       - .env
     volumes:
-    - ./.env:/app/.env
+    # - ./.env:/app/.env
     - ./backend/tmp:/app/backend/tmp
     networks:
       - talentsync_network
@@ -81,11 +82,12 @@ services:
       - redis
       - mongodb
     env_file:
-      - .env
+      - ./.env
     environment:
       - REDIS_HOST=redis
       - MONGO_URI=mongodb://mongodb:27017
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
     volumes:
       - ./backend/tmp:/app/backend/tmp
     networks:
