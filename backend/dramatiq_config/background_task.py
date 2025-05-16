@@ -1,8 +1,10 @@
 import dramatiq
+import  os
 import asyncio
 import uuid
 import time
 import redis
+import shutil
 
 
 from typing import List
@@ -78,7 +80,7 @@ def process_zip_task(
     company_id: str,
     send_invitations: bool = False,
     # request: Request = None,
-    origin : str = None
+    origin: str = None,
 ):
     from backend.upload.utils import (
         process_zip_extracted_files,
@@ -102,19 +104,21 @@ def process_zip_task(
             #     send_invitations=send_invitations,
             # )
 
-            asyncio.run(process_zip_extracted_files(
-                extracted_dir=batch_directory,
-                batch_id=batch_uuid,
-                job_id=job_id,
-                user_id=user_id,
-                company_id=company_id,
-                send_invitations=send_invitations,
-            ))
+            asyncio.run(
+                process_zip_extracted_files(
+                    extracted_dir=batch_directory,
+                    batch_id=batch_uuid,
+                    job_id=job_id,
+                    user_id=user_id,
+                    company_id=company_id,
+                    send_invitations=send_invitations,
+                )
+            )
 
             # async_to_sync(send_processing_completion_email)(
             #     batch_uuid, job_id, user_id, origin
             # )
-            
+
             # asyncio.run(send_processing_completion_email(
             #     batch_uuid, job_id, user_id, origin
             # ))
@@ -149,6 +153,8 @@ def process_file_chunk_task(
         CHUNKS_FAILED,
     )
 
+    chunk_counter_key = f"chunk_counter:{batch_id}"
+
     if not acquire_semaphore():
         logger.warning("Semaphore limit reached, retrying chunk...")
         raise Exception("Semaphore limit reached, try to retry.")
@@ -165,15 +171,17 @@ def process_file_chunk_task(
             #     company_id,
             # )
 
-            asyncio.run(_process_file_chunk(
-                chunk,
-                extracted_dir,
-                batch_uuid,
-                job_id,
-                job_data,
-                user_id,
-                company_id,
-            ))
+            asyncio.run(
+                _process_file_chunk(
+                    chunk,
+                    extracted_dir,
+                    batch_uuid,
+                    job_id,
+                    job_data,
+                    user_id,
+                    company_id,
+                )
+            )
 
             CHUNKS_PROCESSED.inc()
         except Exception as e:
@@ -182,6 +190,15 @@ def process_file_chunk_task(
             raise Exception(f"processing chunk execution failed.")
         finally:
             release_semaphore()
+
+            # Decrement the Redis counter and delete directory if last
+            remaining = r.decr(chunk_counter_key)
+            if remaining == 0:
+                try:
+                    shutil.rmtree(os.path.dirname(extracted_dir))
+                    logger.info(f"Cleaned up directory after last chunk: {extracted_dir}")
+                except Exception as e:
+                    logger.error(f"Failed to clean directory {extracted_dir}: {e}")
 
 
 @dramatiq.actor(actor_name="process_single_file_task", max_retries=3, max_backoff=5000)

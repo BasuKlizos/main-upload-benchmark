@@ -611,17 +611,6 @@ async def _process_and_vectorize_candidates_batch(
     except Exception as e:
         logger.exception(f"Error processing batch {batch_id}: {str(e)}")
 
-    finally:
-        try:
-            shutil.rmtree(os.path.dirname(extracted_dir))
-            # if os.path.exists(extracted_dir):
-            #     shutil.rmtree(extracted_dir)
-            logger.info(f"Successfully cleaned up directory: {extracted_dir}")
-        except Exception as e:
-            logger.error(
-                f"Failed to cleanup directory {extracted_dir}: {e}", exc_info=True
-            )
-
 
 async def process_zip_extracted_files(
     extracted_dir: str,
@@ -651,6 +640,11 @@ async def process_zip_extracted_files(
 
         # await asyncio.gather(*(process_chunk_with_semaphore(chunk) for chunk in chunks))
 
+        
+        # Store chunk counter in Redis
+        chunk_counter_key = f"chunk_counter:{batch_id}"
+        r.set(chunk_counter_key, len(chunks))
+
         for chunk in chunks:
             # Send to Dramatiq
             process_file_chunk_task.send(
@@ -677,12 +671,9 @@ async def process_zip_extracted_files(
                 extracted_dir,
             )
         )
+        
     except Exception as e:
-        logger.error(f"Unexpected error of process_zip_extracted_files: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Unexpected error of process_zip_extracted_files: {e}",
-        )
+        logger.exception(f"Error dispatching chunks: {e}")
 
     # finally:
     #     try:
