@@ -271,6 +271,6 @@ async def upload_candidates(
         duration = time.time() - start_time
         UPLOAD_DURATION.observe(duration)
         try:
-            push_to_gateway("http://localhost:9091", job="fastapi_upload_route", registry=registry)
+            push_to_gateway("http://pushgateway:9091", job="fastapi_upload_route", registry=registry)
         except Exception as e:
             logger.warning(f"Could not push metrics to Prometheus PushGateway: {e}")

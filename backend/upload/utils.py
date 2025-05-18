@@ -519,7 +519,7 @@ async def process_zip_extracted_files(
                 
                 # Push Prometheus metrics to PushGateway
                 try:
-                    push_to_gateway("http://localhost:9091", job="file_chunk_processor_metrics", registry=registry)
+                    push_to_gateway("http://pushgateway:9091", job="file_chunk_processor_metrics", registry=registry)
                 except Exception as e:
                     logger.warning(f"Could not push metrics to Prometheus PushGateway: {e}")
 

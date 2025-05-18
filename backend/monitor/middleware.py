@@ -18,7 +18,7 @@ from prometheus_client import Summary, CollectorRegistry, push_to_gateway
 import time
 
 class PrometheusMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, gateway_url="http://localhost:9091", job_name="fastapi_app"):
+    def __init__(self, app, gateway_url="http://pushgateway:9091", job_name="fastapi_app"):
         super().__init__(app)
         self.registry = CollectorRegistry()
         self.gateway_url = gateway_url
