@@ -90,10 +90,11 @@ services:
       - .env:/app/.env
       - ./backend/templates:/app/backend/templates
       - ./backend/tmp:/app/backend/tmp
+      - ./backend/logs:/app/backend/logs
     networks:
       - talentsync_network
-    ports:
-      - "8001:8001"
+    # ports:
+    #   - "8002:8002"
 
   prometheus:
     image: prom/prometheus
@@ -103,6 +104,14 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
+    networks:
+      - talentsync_network
+
+  pushgateway:
+    image: prom/pushgateway
+    container_name: pushgateway
+    ports:
+      - "9091:9091"
     networks:
       - talentsync_network
 

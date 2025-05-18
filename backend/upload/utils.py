@@ -1,4 +1,5 @@
 import asyncio
+import time
 import os.path
 import random
 import contextlib
@@ -27,7 +28,12 @@ from fastapi import HTTPException, Request, status
 from pymongo import ReplaceOne
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 
-from backend.monitor.metrices import CREATED_FILES
+from backend.monitor.metrices import (
+    CREATED_FILES, 
+    CHUNK_PROCESS_DURATION, 
+    CHUNKS_FAILED,
+    CHUNKS_PROCESSED,
+)
 
 # Collections
 candidates = collection("candidates")
@@ -460,6 +466,7 @@ async def process_zip_extracted_files(
         logger.info(f"Found {len(files)} files to process")
 
         CREATED_FILES.inc(len(files))
+        print(f"------file count---------:{CREATED_FILES}")
 
         chunks = [files[i : i + settings.CHUNK_SIZE] for i in range(0, len(files), settings.CHUNK_SIZE)]
         job_data = redis.get_json_(f"job:{job_id}")
@@ -468,7 +475,17 @@ async def process_zip_extracted_files(
 
         async def process_chunk_with_semaphore(chunk):
             async with semaphore:
-                await _process_file_chunk(chunk, extracted_dir, batch_id, job_id, job_data, user_id, company_id)
+                start_time = time.time()
+
+                try:
+                    await _process_file_chunk(chunk, extracted_dir, batch_id, job_id, job_data, user_id, company_id)
+                    CHUNKS_PROCESSED.inc()
+                except Exception as e:
+                    CHUNKS_FAILED.inc()
+                    logger.error(f"Chunk failed: {chunk} - Error: {e}", exc_info=True)
+                finally:
+                    duration = time.time() - start_time
+                    CHUNK_PROCESS_DURATION.observe(duration)
 
         await asyncio.gather(*(process_chunk_with_semaphore(chunk) for chunk in chunks))
 

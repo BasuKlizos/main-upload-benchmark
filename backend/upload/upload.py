@@ -41,6 +41,8 @@ from backend.monitor.metrices import (
     ZIP_FILES,
     CREATED_FILES,
     UNSUPPORTED_FILES,
+    push_to_gateway,
+    registry
 )
 
 router = APIRouter()
@@ -71,30 +73,30 @@ async def upload_candidates(
     logger.info("Upload endpoint triggered")
     UPLOAD_REQUESTS.inc()
 
-    logger.debug(f"Received batch_name: {batch_name} for job_id: {job_id}")
-    # Check if batch_name is already taken
-    if await batches.find_one({"batch_name": batch_name}):
-        logger.warning(f"Batch name already taken: {batch_name}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Batch name already taken",
-        )
-
-    # Get job data
-    job = await get_job_data(job_id)
-    logger.debug(f"Fetched job data: {job}")
-
-    # Parse Role and User Details form UserData
-    details, _ = user_data
-    logger.debug(f"User details: {details}")
-
-    batch_id = create_batch_id()
-    logger.info(f"Starting new upload batch: {batch_id}")
-
-    batch_directory = os.path.join(get_temp_path(), str(batch_id))
-    logger.info(f"Creating temp directory: {batch_directory}")
-
     try:
+        logger.debug(f"Received batch_name: {batch_name} for job_id: {job_id}")
+        # Check if batch_name is already taken
+        if await batches.find_one({"batch_name": batch_name}):
+            logger.warning(f"Batch name already taken: {batch_name}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Batch name already taken",
+            )
+
+        # Get job data
+        job = await get_job_data(job_id)
+        logger.debug(f"Fetched job data: {job}")
+
+        # Parse Role and User Details form UserData
+        details, _ = user_data
+        logger.debug(f"User details: {details}")
+
+        batch_id = create_batch_id()
+        logger.info(f"Starting new upload batch: {batch_id}")
+
+        batch_directory = os.path.join(get_temp_path(), str(batch_id))
+        logger.info(f"Creating temp directory: {batch_directory}")
+
         os.makedirs(batch_directory, exist_ok=True)
 
         for file in files:
@@ -156,8 +158,6 @@ async def upload_candidates(
                     f.write(await file.read())
                 logger.debug(f"Saved file to: {file_path}")
             else:
-                
-                unsupported_file_count += 1
                 UNSUPPORTED_FILES.inc()
 
                 logger.error(f"Invalid file type for {file.filename}: {file.content_type}, Skipping file")
@@ -187,6 +187,8 @@ async def upload_candidates(
             {"$set": {"updated_at": get_current_time_utc()}, "$inc": {"selection_progress.total_candidate_count": file_count}},
         )
         logger.debug("Updated job record with candidate count")
+
+        UPLOAD_SUCCESS.inc()
 
         # Create response before background processing
         response = JSONResponse(
@@ -246,10 +248,6 @@ async def upload_candidates(
             send_invitations=send_invitations,
             origin=origin
         )
-
-        # Log upload duration
-        upload_duration = time.time() - start_time
-        UPLOAD_DURATION.observe(upload_duration)
         
         return response
 
@@ -268,6 +266,11 @@ async def upload_candidates(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing upload: {str(e)}",
         )
-
-# Log success
-UPLOAD_SUCCESS.inc()
+    
+    finally:
+        duration = time.time() - start_time
+        UPLOAD_DURATION.observe(duration)
+        try:
+            push_to_gateway("http://localhost:9091", job="fastapi_upload_route", registry=registry)
+        except Exception as e:
+            logger.warning(f"Could not push metrics to Prometheus PushGateway: {e}")

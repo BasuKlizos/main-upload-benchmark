@@ -2,13 +2,17 @@ global:
   scrape_interval: 5s
 
 scrape_configs:
-  - job_name: 'backend_service'
-    static_configs:
-      - targets: ['backend_service:8000']
+#   - job_name: 'backend_service'
+#     static_configs:
+#       - targets: ['backend_service:8000']
   
-  - job_name: 'dramatiq-worker'
+  # - job_name: 'dramatiq_worker'
+  #   static_configs:
+  #     - targets: ['dramatiq_worker:8002']
+
+  - job_name: 'pushgateway'
     static_configs:
-      - targets: ['localhost:8001']
+      - targets: ['pushgateway:9091']
 
   # - job_name: 'mongodb_exporter'
   #   static_configs:

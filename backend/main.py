@@ -10,17 +10,17 @@ app = FastAPI()
 
 app.add_middleware(PrometheusMiddleware)
 
-# Instrument and expose Prometheus metrics
-instrumentator = Instrumentator(
-    should_group_status_codes=True,
-    should_ignore_untemplated=True,
-    should_respect_env_var=True,
-)
-instrumentator.instrument(app).expose(app)
+# # Instrument and expose Prometheus metrics
+# instrumentator = Instrumentator(
+#     should_group_status_codes=True,
+#     should_ignore_untemplated=True,
+#     should_respect_env_var=True,
+# )
+# instrumentator.instrument(app).expose(app)
 
-# Mount /metrics endpoint
-metrics_app = make_asgi_app()
-app.mount("/metrics", metrics_app)
+# # Mount /metrics endpoint
+# metrics_app = make_asgi_app()
+# app.mount("/metrics", metrics_app)
 
 # Home route
 @app.get("/")

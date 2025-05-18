@@ -5,13 +5,13 @@ import uuid
 import time
 import redis
 import shutil
-import threading
+# import threading
 
 
 from typing import List
 from dramatiq.brokers.redis import RedisBroker
 from dramatiq.middleware import Retries
-from prometheus_client import start_http_server
+# from prometheus_client import start_http_server
 
 from backend.config import settings
 from backend.logging_config.logger import logger
@@ -21,11 +21,11 @@ broker = RedisBroker(url="redis://redis:6379/0")
 broker.add_middleware(Retries())
 dramatiq.set_broker(broker)
 
-# Start Prometheus metrics server (e.g., on port 8001)
-def run_prometheus_server():
-    start_http_server(8001)
+# Start Prometheus metrics server (e.g., on port 8002)
+# def run_prometheus_server():
+#     start_http_server(8002)
 
-threading.Thread(target=run_prometheus_server, daemon=True).start()
+# threading.Thread(target=run_prometheus_server, daemon=True).start()
 
 # Redis Connection
 r = redis.Redis.from_url("redis://redis:6379/0")
@@ -143,6 +143,7 @@ def process_zip_task(
     finally:
         process_duration = time.time() - process_start_time
         PROCESS_DURATION.observe(process_duration)
+        print(f"[Batch {batch_id}] PROCESS_DURATION observed: {process_duration:.2f}s")
         logger.info(
             f"[Batch {batch_id}] PROCESS_DURATION observed: {process_duration:.2f}s"
         )
@@ -201,18 +202,21 @@ def process_file_chunk_task(
         )
 
         CHUNKS_PROCESSED.inc()
+        print(f"----------metrics of CHUNKS_PROCESSED: {CHUNKS_PROCESSED}")
         logger.info(
             f"[Batch {batch_id}] Successfully processed chunk of {len(chunk)} files."
         )
     except Exception as e:
         CHUNKS_FAILED.inc()
+        print(f"----------metrics of CHUNKS_FAILED: {CHUNKS_FAILED}")
         logger.error(f"Error processing chunk: {e}")
         raise Exception(f"processing chunk execution failed.")
     finally:
 
         chunk_duration = time.time() - chunk_start_time
         CHUNK_PROCESS_DURATION.observe(chunk_duration)
-        
+        print(f"----------metrics of CHUNK_PROCESS_DURATION: {CHUNK_PROCESS_DURATION}")
+            
         release_semaphore()
 
         # Decrement the Redis counter and delete directory if last
@@ -246,17 +250,20 @@ def process_single_file_task(file_path: str, job_id: str, user_id: str, task_id:
         # result = async_to_sync(_process_single_file)(file_path, job_id, user_id)
         r.set(result_key, str(result))
         FILES_PROCESSED.inc()
+        print(f"----------metrics of FILES_PROCESSED: {FILES_PROCESSED}")
         logger.info(
             f"[Task {task_id}] File processed successfully in {time.perf_counter() - start:.2f}s"
         )
     except Exception as e:
         r.set(result_key, "failed")
         FILES_FAILED.inc()
+        print(f"----------metrics of FILES_FAILED: {FILES_FAILED}")
         logger.exception(f"Error processing file {file_path}: {e}")
         raise Exception("process_single_file_task execution failed.")
     finally:
         file_duration = time.time() - start
         FILE_PROCESS_DURATION.observe(file_duration)
+        print(f"----------metrics of FILE_PROCESS_DURATION: {FILE_PROCESS_DURATION}")
 
 
 # @dramatiq.actor(actor_name="send_email_task", max_retries=3, max_backoff=5000)
