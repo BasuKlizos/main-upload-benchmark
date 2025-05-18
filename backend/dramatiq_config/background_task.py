@@ -15,6 +15,12 @@ from dramatiq.middleware import Retries
 
 from backend.config import settings
 from backend.logging_config.logger import logger
+from backend.monitor.metrices import (
+    PROCESS_DURATION, 
+    EMAIL_SENT,
+    push_to_gateway,
+    registry
+)
 
 # Redis Broker Setup
 broker = RedisBroker(url="redis://redis:6379/0")
@@ -92,7 +98,6 @@ def process_zip_task(
         process_zip_extracted_files,
         # send_processing_completion_email,
     )
-    from backend.monitor.metrices import PROCESS_DURATION, EMAIL_SENT
 
     batch_uuid = get_uuid(batch_id)
 
@@ -143,10 +148,14 @@ def process_zip_task(
     finally:
         process_duration = time.time() - process_start_time
         PROCESS_DURATION.observe(process_duration)
-        print(f"[Batch {batch_id}] PROCESS_DURATION observed: {process_duration:.2f}s")
+        # print(f"[Batch {batch_id}] PROCESS_DURATION observed: {process_duration:.2f}s")
         logger.info(
             f"[Batch {batch_id}] PROCESS_DURATION observed: {process_duration:.2f}s"
         )
+        try:
+            push_to_gateway("http://localhost:9091", job="fastapi_upload_route", registry=registry)
+        except Exception as e:
+            logger.warning(f"Could not push metrics to Prometheus PushGateway: {e}")
 
 
 @dramatiq.actor(actor_name="process_file_chunk_task", max_retries=3, max_backoff=5000)

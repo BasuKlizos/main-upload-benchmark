@@ -33,6 +33,8 @@ from backend.monitor.metrices import (
     CHUNK_PROCESS_DURATION, 
     CHUNKS_FAILED,
     CHUNKS_PROCESSED,
+    push_to_gateway,
+    registry
 )
 
 # Collections
@@ -505,7 +507,7 @@ async def process_zip_extracted_files(
         logger.error(f"Error during processing files from {extracted_dir}: {e}", exc_info=True)
         raise
 
-    else:
+    else:   
         async def run_and_cleanup():
             try:
                 await _process_and_vectorize_candidates_batch(batch_id, job_id, company_id, user_id, send_invitations)
@@ -514,6 +516,12 @@ async def process_zip_extracted_files(
                     shutil.rmtree(extracted_dir)
                     # shutil.rmtree(os.path.dirname(extracted_dir))
                     logger.info(f"Successfully cleaned up directory: {extracted_dir}")
+                
+                # Push Prometheus metrics to PushGateway
+                try:
+                    push_to_gateway("http://localhost:9091", job="file_chunk_processor_metrics", registry=registry)
+                except Exception as e:
+                    logger.warning(f"Could not push metrics to Prometheus PushGateway: {e}")
 
         asyncio.create_task(run_and_cleanup())
 
