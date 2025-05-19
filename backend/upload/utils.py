@@ -33,6 +33,9 @@ from backend.monitor.metrices import (
     CHUNK_PROCESS_DURATION, 
     CHUNKS_FAILED,
     CHUNKS_PROCESSED,
+    FILES_PROCESSED,
+    FILE_PROCESS_DURATION,
+    FILES_FAILED,
     push_to_gateway,
     registry
 )
@@ -104,6 +107,8 @@ async def _process_single_file(file_path: str, job_name: str, user_id: str) -> C
     logger.info(f"Starting to process file: {file_path}")
     unq_id = _generate_unique_candidate_id()
 
+    start_time = time.time()
+
     try:
         text, is_image_pdf, metadata = await extract.extract_text(file_path, user_id)
         if file_path.lower().endswith((".docx", ".doc")) and not text:
@@ -144,10 +149,18 @@ async def _process_single_file(file_path: str, job_name: str, user_id: str) -> C
         cache_key = f"candidate_text:{unq_id}"
         redis.set_json_(cache_key, text, set_expiry=True, expiry_time=timedelta(days=1))
 
+        FILES_PROCESSED.inc()
+        duration = time.time() - start_time
+        FILE_PROCESS_DURATION.observe(duration)
+
         logger.info(f"Successfully parsed file: {file_path}")
         return parsed_cv
 
     except Exception as e:
+        FILES_FAILED.inc()
+        duration = time.time() - start_time
+        FILE_PROCESS_DURATION.observe(duration)
+
         logger.error(f"Error processing file {file_path}: {str(e)}", exc_info=True)
         return {"error": str(e), "cv_directory_link": upload_file_to_s3(file_path, job_name, unq_id)}
 
