@@ -153,7 +153,7 @@ def process_zip_task(
             f"[Batch {batch_id}] PROCESS_DURATION observed: {process_duration:.2f}s"
         )
         try:
-            push_to_gateway("http://pushgateway:9091", job="fastapi_upload_route", registry=registry)
+            push_to_gateway("http://pushgateway:9091", job="background_process_zip_task", registry=registry)
         except Exception as e:
             logger.warning(f"Could not push metrics to Prometheus PushGateway: {e}")
 
