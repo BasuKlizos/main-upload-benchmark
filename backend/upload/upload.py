@@ -40,8 +40,7 @@ from backend.monitor.metrices import (
     UPLOAD_FAILURE,
     FILE_COUNT,
     ZIP_FILES,
-    PDF_FILES,
-    DOCX_FILES,
+    CREATED_FILES,
     UNSUPPORTED_FILES,
     UPLOAD_DURATION,
     PROCESS_DURATION,
@@ -97,11 +96,6 @@ async def upload_candidates(
 
         
         os.makedirs(batch_directory, exist_ok=True)
-        
-        zip_file_count = 0
-        pdf_file_count = 0
-        docx_file_count = 0
-        unsupported_file_count = 0
 
         for file in files:
             logger.info(f"Processing file: {file.filename}")
@@ -114,7 +108,6 @@ async def upload_candidates(
             ]:
                 logger.error(f"Invalid file type for {file.filename}: {file.content_type}")
                 
-                unsupported_file_count += 1
                 UNSUPPORTED_FILES.inc()
                 
                 raise HTTPException(
@@ -125,7 +118,6 @@ async def upload_candidates(
             # Check file type and process accordingly
             if file.content_type in ["application/zip", "application/x-zip-compressed"]:
                 
-                zip_file_count += 1
                 ZIP_FILES.inc()
 
                 contents = await file.read()
@@ -151,11 +143,7 @@ async def upload_candidates(
                 shutil.rmtree(temp_extract_dir)
 
             elif file.content_type in ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
-                
-                pdf_file_count += 1
-                docx_file_count += 1
-                PDF_FILES.inc()
-                DOCX_FILES.inc()
+                CREATED_FILES.inc()
 
                 base, ext = os.path.splitext(file.filename)
                 # Use timestamp to ensure uniqueness
@@ -164,8 +152,6 @@ async def upload_candidates(
                 with open(file_path, "wb") as f:
                     f.write(await file.read())
             else:
-                
-                unsupported_file_count += 1
                 UNSUPPORTED_FILES.inc()
 
                 logger.error(f"Invalid file type for {file.filename}: {file.content_type}, Skipping file")
