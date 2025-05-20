@@ -4,6 +4,7 @@ import random
 import contextlib
 import shutil
 import string
+import time
 import uuid
 from datetime import timedelta
 from typing import Any, List, Optional
@@ -26,6 +27,12 @@ from bson import Binary, ObjectId
 from fastapi import HTTPException, Request, status
 from pymongo import ReplaceOne
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
+
+from backend.monitor.metrices import (
+    CHUNKS_PROCESSED,
+    CHUNKS_FAILED,
+    CHUNK_PROCESS_DURATION
+)
 
 # Collections
 candidates = collection("candidates")
@@ -464,7 +471,15 @@ async def process_zip_extracted_files(
 
         async def process_chunk_with_semaphore(chunk):
             async with semaphore:
-                await _process_file_chunk(chunk, extracted_dir, batch_id, job_id, job_data, user_id, company_id)
+                start_time = time.perf_counter()
+                try:
+                    await _process_file_chunk(chunk, extracted_dir, batch_id, job_id, job_data, user_id, company_id)
+                    duration = time.perf_counter() - start_time
+                    CHUNK_PROCESS_DURATION.observe(duration)
+                    CHUNKS_PROCESSED.inc()
+                except Exception as e:
+                    CHUNKS_FAILED.inc()
+                    logger.error(f"Failed to process chunk: {e}", exc_info=True)
 
         await asyncio.gather(*(process_chunk_with_semaphore(chunk) for chunk in chunks))
 
