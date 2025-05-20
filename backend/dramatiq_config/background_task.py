@@ -11,6 +11,7 @@ import shutil
 from typing import List
 from dramatiq.brokers.redis import RedisBroker
 from dramatiq.middleware import Retries
+from asgiref.sync import async_to_sync
 # from prometheus_client import start_http_server
 
 from backend.config import settings
@@ -21,6 +22,16 @@ from backend.monitor.metrices import (
     push_to_gateway,
     registry
 )
+
+
+# Create a persistent asyncio event loop
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
+def run_in_event_loop(coro):
+    return loop.run_until_complete(coro)
+
+
 
 # Redis Broker Setup
 broker = RedisBroker(url="redis://redis:6379/0")
@@ -117,7 +128,18 @@ def process_zip_task(
         #     send_invitations=send_invitations,
         # )
 
-        asyncio.run(
+        # asyncio.run(
+        #     process_zip_extracted_files(
+        #         extracted_dir=batch_directory,
+        #         batch_id=batch_uuid,
+        #         job_id=job_id,
+        #         user_id=user_id,
+        #         company_id=company_id,
+        #         send_invitations=send_invitations,
+        #     )
+        # )
+        
+        run_in_event_loop(
             process_zip_extracted_files(
                 extracted_dir=batch_directory,
                 batch_id=batch_uuid,

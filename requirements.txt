@@ -25,6 +25,8 @@ anyio==4.9.0
     #   openai
     #   starlette
     #   watchfiles
+asgiref==3.8.1
+    # via -r .\requirements.in
 async-timeout==5.0.1
     # via
     #   -r .\requirements.in
@@ -457,6 +459,7 @@ typing-extensions==4.13.2
     # via
     #   -r .\requirements.in
     #   anyio
+    #   asgiref
     #   black
     #   fastapi
     #   multidict
