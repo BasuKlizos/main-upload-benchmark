@@ -75,27 +75,27 @@ async def upload_candidates(
     start_time = time.time()
     UPLOAD_REQUESTS.inc()
 
-
-    # Check if batch_name is already taken
-    if await batches.find_one({"batch_name": batch_name}):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Batch name already taken",
-        )
-
-    # Get job data
-    job = await get_job_data(job_id)
-
-    # Parse Role and User Details form UserData
-    details, _ = user_data
-
-    batch_id = create_batch_id()
-    logger.info(f"Starting new upload batch: {batch_id}")
-
-    batch_directory = os.path.join(get_temp_path(), str(batch_id))
-    logger.info(f"Temp directory: {batch_directory}")
-
     try:
+        # Check if batch_name is already taken
+        if await batches.find_one({"batch_name": batch_name}):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Batch name already taken",
+            )
+
+        # Get job data
+        job = await get_job_data(job_id)
+
+        # Parse Role and User Details form UserData
+        details, _ = user_data
+
+        batch_id = create_batch_id()
+        logger.info(f"Starting new upload batch: {batch_id}")
+
+        batch_directory = os.path.join(get_temp_path(), str(batch_id))
+        logger.info(f"Temp directory: {batch_directory}")
+
+        
         os.makedirs(batch_directory, exist_ok=True)
         
         zip_file_count = 0
@@ -193,6 +193,11 @@ async def upload_candidates(
             {"$set": {"updated_at": get_current_time_utc()}, "$inc": {"selection_progress.total_candidate_count": file_count}},
         )
 
+        
+        # Log success
+        UPLOAD_SUCCESS.inc()
+
+
         # Create response before background processing
         response = JSONResponse(
             content={
@@ -259,6 +264,3 @@ async def upload_candidates(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing upload: {str(e)}",
         )
-
-# Log success
-UPLOAD_SUCCESS.inc()
