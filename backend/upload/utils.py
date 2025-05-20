@@ -34,7 +34,8 @@ from backend.monitor.metrices import (
     CHUNK_PROCESS_DURATION,
     FILES_PROCESSED,
     FILES_FAILED,
-    FILE_PROCESS_DURATION
+    FILE_PROCESS_DURATION,
+    CREATED_FILES,
 )
 
 # Collections
@@ -475,6 +476,8 @@ async def process_zip_extracted_files(
     try:
         files = [f for f in os.listdir(extracted_dir) if f.endswith((".pdf", ".docx"))]
         logger.info(f"Found {len(files)} files to process")
+
+        CREATED_FILES.inc(len(files))
 
         chunks = [files[i : i + settings.CHUNK_SIZE] for i in range(0, len(files), settings.CHUNK_SIZE)]
         job_data = redis.get_json_(f"job:{job_id}")
