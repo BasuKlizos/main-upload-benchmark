@@ -73,6 +73,8 @@ async def upload_candidates(
     logger.info("Upload endpoint triggered")
     UPLOAD_REQUESTS.inc()
 
+    batch_id = None 
+
     try:
         logger.debug(f"Received batch_name: {batch_name} for job_id: {job_id}")
         # Check if batch_name is already taken
