@@ -31,7 +31,10 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fi
 from backend.monitor.metrices import (
     CHUNKS_PROCESSED,
     CHUNKS_FAILED,
-    CHUNK_PROCESS_DURATION
+    CHUNK_PROCESS_DURATION,
+    FILES_PROCESSED,
+    FILES_FAILED,
+    FILE_PROCESS_DURATION
 )
 
 # Collections
@@ -100,6 +103,7 @@ def _generate_unique_candidate_id(length: int = 8) -> str:
 async def _process_single_file(file_path: str, job_name: str, user_id: str) -> CVParseResponse | dict:
     logger.info(f"Starting to process file: {file_path}")
     unq_id = _generate_unique_candidate_id()
+    start_time = time.perf_counter()
 
     try:
         text, is_image_pdf, metadata = await extract.extract_text(file_path, user_id)
@@ -141,10 +145,18 @@ async def _process_single_file(file_path: str, job_name: str, user_id: str) -> C
         cache_key = f"candidate_text:{unq_id}"
         redis.set_json_(cache_key, text, set_expiry=True, expiry_time=timedelta(days=1))
 
+        duration = time.perf_counter() - start_time
+        FILE_PROCESS_DURATION.observe(duration)
+        FILES_PROCESSED.inc()
+
         logger.info(f"Successfully parsed file: {file_path}")
         return parsed_cv
 
     except Exception as e:
+        duration = time.perf_counter() - start_time
+        FILE_PROCESS_DURATION.observe(duration)
+        FILES_FAILED.inc()
+
         logger.error(f"Error processing file {file_path}: {str(e)}", exc_info=True)
         return {"error": str(e), "cv_directory_link": upload_file_to_s3(file_path, job_name, unq_id)}
 
