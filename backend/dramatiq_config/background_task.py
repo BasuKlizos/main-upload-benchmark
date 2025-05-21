@@ -8,46 +8,32 @@ import redis
 import shutil
 import zipfile
 import base64
-# import threading
-
 
 from typing import List
 from dramatiq.brokers.redis import RedisBroker
 from dramatiq.middleware import Retries, AsyncIO
-from asgiref.sync import async_to_sync
 from bson import Binary, ObjectId
-# from prometheus_client import start_http_server
 
 from backend.upload.utils import (
     get_job_data,
 )
 from backend.db_config.db import collection
 from backend.utils import (
-    create_batch_id,
     get_current_time_utc,
     get_temp_path,
 )
 from backend.config import settings
 from backend.logging_config.logger import logger
 from backend.monitor.metrices import (
-    PROCESS_DURATION, 
+    PROCESS_DURATION,
     EMAIL_SENT,
     FILE_COUNT,
     UNSUPPORTED_FILES,
     ZIP_FILES,
     CREATED_FILES,
     push_to_gateway,
-    registry
+    registry,
 )
-
-
-# Create a persistent asyncio event loop
-# loop = asyncio.new_event_loop()
-# asyncio.set_event_loop(loop)
-
-# def run_in_event_loop(coro):
-#     return loop.run_until_complete(coro)
-
 
 
 # Redis Broker Setup
@@ -55,12 +41,6 @@ broker = RedisBroker(url="redis://redis:6379/0")
 broker.add_middleware(AsyncIO())
 broker.add_middleware(Retries())
 dramatiq.set_broker(broker)
-
-# Start Prometheus metrics server (e.g., on port 8002)
-# def run_prometheus_server():
-#     start_http_server(8002)
-
-# threading.Thread(target=run_prometheus_server, daemon=True).start()
 
 # Redis Connection
 r = redis.Redis.from_url("redis://redis:6379/0")
@@ -115,6 +95,7 @@ def release_semaphore():
             except redis.WatchError:
                 continue
 
+
 @dramatiq.actor(actor_name="zip_extraction_actor")
 async def zip_extract_and_prepare_actor(
     job_id: str,
@@ -123,7 +104,7 @@ async def zip_extract_and_prepare_actor(
     user_details: dict,
     batch_id: str,
     send_invitations: bool,
-    origin:str,
+    origin: str,
 ):
     logger.info("zip_extract_and_prepare_actor triggered")
     # batch_id = None
@@ -134,7 +115,7 @@ async def zip_extract_and_prepare_actor(
         if await batches.find_one({"batch_name": batch_name}):
             logger.warning(f"Batch name already taken: {batch_name}")
             return
-        
+
         job = await get_job_data(job_id)
         logger.debug(f"Fetched job data: {job}")
 
@@ -174,7 +155,10 @@ async def zip_extract_and_prepare_actor(
                         if fname.lower().endswith((".pdf", ".docx")):
                             src = os.path.join(root, fname)
                             base, ext = os.path.splitext(fname)
-                            dest = os.path.join(batch_directory, f"{base}_{get_current_time_utc().timestamp()}{ext}")
+                            dest = os.path.join(
+                                batch_directory,
+                                f"{base}_{get_current_time_utc().timestamp()}{ext}",
+                            )
                             shutil.move(src, dest)
                             logger.debug(f"Moved {src} → {dest}")
                 shutil.rmtree(temp_extract_dir)
@@ -182,29 +166,36 @@ async def zip_extract_and_prepare_actor(
             else:
                 CREATED_FILES.inc()
                 base, ext = os.path.splitext(filename)
-                dest = os.path.join(batch_directory, f"{base}_{get_current_time_utc().timestamp()}{ext}")
+                dest = os.path.join(
+                    batch_directory, f"{base}_{get_current_time_utc().timestamp()}{ext}"
+                )
                 with open(dest, "wb") as f:
                     f.write(content)
                 logger.debug(f"Saved file: {dest}")
 
-        file_count = len([
-            f for f in os.listdir(batch_directory)
-            if f.lower().endswith((".pdf", ".docx"))
-        ])
+        file_count = len(
+            [
+                f
+                for f in os.listdir(batch_directory)
+                if f.lower().endswith((".pdf", ".docx"))
+            ]
+        )
 
         batch_uuid = get_uuid(batch_id)
 
-        await batches.insert_one({
-            "uploaded_by": ObjectId(user_details.get("company_id")),
-            "company_id": ObjectId(user_details.get("company_id")),
-            "batch_id": Binary.from_uuid(batch_uuid),
-            "batch_name": batch_name,
-            "upload_count": file_count,
-            "job_id": ObjectId(job_id),
-            "status": "processing",
-            "start_time": get_current_time_utc(),
-        })
-        logger.debug("Inserted batch metadata to database") 
+        await batches.insert_one(
+            {
+                "uploaded_by": ObjectId(user_details.get("company_id")),
+                "company_id": ObjectId(user_details.get("company_id")),
+                "batch_id": Binary.from_uuid(batch_uuid),
+                "batch_name": batch_name,
+                "upload_count": file_count,
+                "job_id": ObjectId(job_id),
+                "status": "processing",
+                "start_time": get_current_time_utc(),
+            }
+        )
+        logger.debug("Inserted batch metadata to database")
 
         await jobs.update_one(
             {"_id": ObjectId(job_id)},
@@ -217,8 +208,7 @@ async def zip_extract_and_prepare_actor(
 
         logger.info(f"Batch {batch_name} processed with {file_count} files")
 
-        
-        logger.debug(f"Sending background task with origin: {origin}") 
+        logger.debug(f"Sending background task with origin: {origin}")
 
         process_zip_task.send(
             batch_directory=batch_directory,
@@ -228,20 +218,24 @@ async def zip_extract_and_prepare_actor(
             user_id=user_details.get("user_id"),
             company_id=user_details.get("company_id"),
             send_invitations=send_invitations,
-            origin=origin
+            origin=origin,
         )
 
     except Exception as e:
         logger.exception(f"Error in zip_extract_and_prepare_actor: {e}")
-        
+
         # Cleanup on error
         try:
             if batch_directory and os.path.exists(batch_directory):
                 shutil.rmtree(batch_directory)
-                logger.debug(f"Cleaned up temp directory after error: {batch_directory}")
+                logger.debug(
+                    f"Cleaned up temp directory after error: {batch_directory}"
+                )
         except Exception as cleanup_error:
-            logger.error(f"Failed to cleanup temp directory: {cleanup_error}", exc_info=True)
-        
+            logger.error(
+                f"Failed to cleanup temp directory: {cleanup_error}", exc_info=True
+            )
+
 
 @dramatiq.actor(actor_name="process_zip_file_task", max_retries=3, max_backoff=5000)
 async def process_zip_task(
@@ -268,56 +262,19 @@ async def process_zip_task(
 
     process_start_time = time.time()
     try:
-        # async_to_sync(process_zip_extracted_files)(
-        #     extracted_dir=batch_directory,
-        #     batch_id=batch_uuid,
-        #     job_id=job_id,
-        #     user_id=user_id,
-        #     company_id=company_id,
-        #     send_invitations=send_invitations,
-        # )
-
-        # asyncio.run(
-        #     process_zip_extracted_files(
-        #         extracted_dir=batch_directory,
-        #         batch_id=batch_uuid,
-        #         job_id=job_id,
-        #         user_id=user_id,
-        #         company_id=company_id,
-        #         send_invitations=send_invitations,
-        #     )
-        # )
-        
-        # run_in_event_loop(
-        #     process_zip_extracted_files(
-        #         extracted_dir=batch_directory,
-        #         batch_id=batch_uuid,
-        #         job_id=job_id,
-        #         user_id=user_id,
-        #         company_id=company_id,
-        #         send_invitations=send_invitations,
-        #     )
-        # )
-
         await process_zip_extracted_files(
-                extracted_dir=batch_directory,
-                batch_id=batch_uuid,
-                job_id=job_id,
-                user_id=user_id,
-                company_id=company_id,
-                send_invitations=send_invitations,
-            )
+            extracted_dir=batch_directory,
+            batch_id=batch_uuid,
+            job_id=job_id,
+            user_id=user_id,
+            company_id=company_id,
+            send_invitations=send_invitations,
+        )
         logger.info(f"[Batch {batch_id}] ZIP processing completed successfully.")
 
-        # async_to_sync(send_processing_completion_email)(
+        # await send_processing_completion_email(
         #     batch_uuid, job_id, user_id, origin
         # )
-
-        # asyncio.run(send_processing_completion_email(
-        #     batch_uuid, job_id, user_id, origin
-        # ))
-
-        # send_email_task.send(batch_id, job_id, user_id, origin)
         # EMAIL_SENT.inc()
         # logger.info(f"Completed processing batch {batch_id}.")
 
@@ -333,7 +290,11 @@ async def process_zip_task(
             f"[Batch {batch_id}] PROCESS_DURATION observed: {process_duration:.2f}s"
         )
         try:
-            push_to_gateway("http://pushgateway:9091", job="background_process_zip_task", registry=registry)
+            push_to_gateway(
+                "http://pushgateway:9091",
+                job="background_process_zip_task",
+                registry=registry,
+            )
         except Exception as e:
             logger.warning(f"Could not push metrics to Prometheus PushGateway: {e}")
 
@@ -359,7 +320,7 @@ def process_file_chunk_task(
     logger.info(
         f"[Batch {batch_id}] Starting chunk processing with {len(chunk)} files."
     )  # -> log
-    
+
     chunk_start_time = time.time()
     chunk_counter_key = f"chunk_counter:{batch_id}"
 
@@ -368,15 +329,6 @@ def process_file_chunk_task(
         raise Exception("Semaphore limit reached, try to retry.")
 
     try:
-        # async_to_sync(_process_file_chunk)(
-        #     chunk,
-        #     extracted_dir,
-        #     batch_uuid,
-        #     job_id,
-        #     job_data,
-        #     user_id,
-        #     company_id,
-        # )
 
         asyncio.run(
             _process_file_chunk(
@@ -405,7 +357,7 @@ def process_file_chunk_task(
         chunk_duration = time.time() - chunk_start_time
         CHUNK_PROCESS_DURATION.observe(chunk_duration)
         print(f"----------metrics of CHUNK_PROCESS_DURATION: {CHUNK_PROCESS_DURATION}")
-            
+
         release_semaphore()
 
         # Decrement the Redis counter and delete directory if last
@@ -413,9 +365,7 @@ def process_file_chunk_task(
         if remaining == 0:
             try:
                 shutil.rmtree(os.path.dirname(extracted_dir))
-                logger.info(
-                    f"Cleaned up directory after last chunk: {extracted_dir}"
-                )
+                logger.info(f"Cleaned up directory after last chunk: {extracted_dir}")
             except Exception as e:
                 logger.error(f"Failed to clean directory {extracted_dir}: {e}")
 
@@ -453,16 +403,3 @@ def process_single_file_task(file_path: str, job_id: str, user_id: str, task_id:
         file_duration = time.time() - start
         FILE_PROCESS_DURATION.observe(file_duration)
         print(f"----------metrics of FILE_PROCESS_DURATION: {FILE_PROCESS_DURATION}")
-
-
-# @dramatiq.actor(actor_name="send_email_task", max_retries=3, max_backoff=5000)
-# def send_email_task(batch_id: str, job_id: str, user_id: str, origin: str = None):
-#     from backend.upload.utils import send_processing_completion_email
-
-#     batch_uuid = get_uuid(batch_id)
-
-#     try:
-#         asyncio.run(send_processing_completion_email(batch_uuid, job_id, user_id, origin))
-#     except Exception as e:
-#         logger.exception(f"Error sending email in send_email_task: {e}")
-#         raise
