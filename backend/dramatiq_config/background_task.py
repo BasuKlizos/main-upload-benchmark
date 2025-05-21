@@ -242,7 +242,7 @@ async def zip_extract_and_prepare_actor(
             )
 
 
-@dramatiq.actor(actor_name="process_zip_file_actor", max_retries=3, max_backoff=5000)
+@dramatiq.actor(actor_name="process_zip_file_actor", max_retries=0)
 async def process_zip_task(
     batch_directory: str,
     batch_id: str,
