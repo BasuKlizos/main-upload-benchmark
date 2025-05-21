@@ -474,6 +474,10 @@ async def _process_and_vectorize_candidates_batch(
 async def process_zip_extracted_files(
     extracted_dir: str, batch_id: uuid.UUID, job_id: str, user_id: str, company_id: str, send_invitations: bool = False
 ):
+    from backend.dramatiq_config.background_task import (
+        process_file_chunk_task,
+        retry_failed_chunks_actor,
+    )
     logger.info(f"Starting to process files from {extracted_dir}")
 
     try:
@@ -481,30 +485,43 @@ async def process_zip_extracted_files(
         logger.info(f"Found {len(files)} files to process")
 
         CREATED_FILES.inc(len(files))
-        print(f"------file count---------:{CREATED_FILES}")
 
         chunks = [files[i : i + settings.CHUNK_SIZE] for i in range(0, len(files), settings.CHUNK_SIZE)]
         job_data = redis.get_json_(f"job:{job_id}")
 
-        semaphore = asyncio.Semaphore(settings.MAX_CONCURRENCY)
+        for idx, chunk in enumerate(chunks):
+            chunk_data = {
+                "chunk_id": f"{job_id}_chunk_{idx}",
+                "chunk_files": chunk,
+                "extracted_dir": extracted_dir,
+                "batch_id": str(batch_id),
+                "job_id": job_id,
+                "user_id": user_id,
+                "company_id": company_id,
+                "send_invitations": send_invitations,
+            }
+            process_file_chunk_task.send_with_options(args=(chunk_data,))
 
-        async def process_chunk_with_semaphore(chunk):
-            async with semaphore:
-                start_time = time.time()
 
-                try:
-                    await _process_file_chunk(chunk, extracted_dir, batch_id, job_id, job_data, user_id, company_id)
-                    CHUNKS_PROCESSED.inc()
-                except Exception as e:
-                    CHUNKS_FAILED.inc()
-                    logger.error(f"Chunk failed: {chunk} - Error: {e}", exc_info=True)
-                finally:
-                    duration = time.time() - start_time
-                    CHUNK_PROCESS_DURATION.observe(duration)
+        # semaphore = asyncio.Semaphore(settings.MAX_CONCURRENCY)
 
-        await asyncio.gather(*(process_chunk_with_semaphore(chunk) for chunk in chunks))
+        # async def process_chunk_with_semaphore(chunk):
+        #     async with semaphore:
+        #         start_time = time.time()
 
-        logger.info(f"Completed processing all chunks")
+        #         try:
+        #             await _process_file_chunk(chunk, extracted_dir, batch_id, job_id, job_data, user_id, company_id)
+        #             CHUNKS_PROCESSED.inc()
+        #         except Exception as e:
+        #             CHUNKS_FAILED.inc()
+        #             logger.error(f"Chunk failed: {chunk} - Error: {e}", exc_info=True)
+        #         finally:
+        #             duration = time.time() - start_time
+        #             CHUNK_PROCESS_DURATION.observe(duration)
+
+        # await asyncio.gather(*(process_chunk_with_semaphore(chunk) for chunk in chunks))
+
+        # logger.info(f"Completed processing all chunks")
 
     #     asyncio.create_task(_process_and_vectorize_candidates_batch(batch_id, job_id, company_id, user_id, send_invitations))
 
@@ -521,22 +538,24 @@ async def process_zip_extracted_files(
         raise
 
     else:   
-        async def run_and_cleanup():
-            try:
-                await _process_and_vectorize_candidates_batch(batch_id, job_id, company_id, user_id, send_invitations)
-            finally:
-                with contextlib.suppress(FileNotFoundError):
-                    shutil.rmtree(extracted_dir)
-                    # shutil.rmtree(os.path.dirname(extracted_dir))
-                    logger.info(f"Successfully cleaned up directory: {extracted_dir}")
+        retry_failed_chunks_actor.send_with_options(args=(job_id,), delay=30000)
+        
+        # async def run_and_cleanup():
+        #     try:
+        #         await _process_and_vectorize_candidates_batch(batch_id, job_id, company_id, user_id, send_invitations)
+        #     finally:
+        #         with contextlib.suppress(FileNotFoundError):
+        #             shutil.rmtree(extracted_dir)
+        #             # shutil.rmtree(os.path.dirname(extracted_dir))
+        #             logger.info(f"Successfully cleaned up directory: {extracted_dir}")
                 
-                # Push Prometheus metrics to PushGateway
-                try:
-                    push_to_gateway("http://pushgateway:9091", job="file_chunk_processor_metrics", registry=registry)
-                except Exception as e:
-                    logger.warning(f"Could not push metrics to Prometheus PushGateway: {e}")
+        #         # Push Prometheus metrics to PushGateway
+        #         try:
+        #             push_to_gateway("http://pushgateway:9091", job="file_chunk_processor_metrics", registry=registry)
+        #         except Exception as e:
+        #             logger.warning(f"Could not push metrics to Prometheus PushGateway: {e}")
 
-        asyncio.create_task(run_and_cleanup())
+        # asyncio.create_task(run_and_cleanup())
 
 async def _update_batch_status(batch_id: uuid.UUID):
     batch = await batches.find_one_and_update(

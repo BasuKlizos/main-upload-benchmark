@@ -8,6 +8,8 @@ import redis
 import shutil
 import zipfile
 import base64
+import json
+import contextlib
 
 from typing import List
 from dramatiq.brokers.redis import RedisBroker
@@ -31,6 +33,9 @@ from backend.monitor.metrices import (
     UNSUPPORTED_FILES,
     ZIP_FILES,
     CREATED_FILES,
+    CHUNK_PROCESS_DURATION,
+    CHUNKS_FAILED,
+    CHUNKS_PROCESSED,
     push_to_gateway,
     registry,
 )
@@ -297,75 +302,135 @@ async def process_zip_task(
             logger.warning(f"Could not push metrics to Prometheus PushGateway: {e}")
 
 
-@dramatiq.actor(actor_name="process_file_chunk_task", max_retries=3, max_backoff=5000)
-def process_file_chunk_task(
-    chunk: List[str],
-    extracted_dir: str,
-    batch_id: str,
-    job_id: str,
-    job_data: dict,
-    user_id: str,
-    company_id: str,
+@dramatiq.actor(actor_name="process_file_chunk_actor_main_queue", max_retries=0)
+async def process_file_chunk_task(
+    chunk_data: dict
 ):
-    batch_uuid = get_uuid(batch_id)
     from backend.upload.utils import _process_file_chunk
-    from backend.monitor.metrices import (
-        CHUNK_PROCESS_DURATION,
-        CHUNKS_PROCESSED,
-        CHUNKS_FAILED,
-    )
-
-    logger.info(
-        f"[Batch {batch_id}] Starting chunk processing with {len(chunk)} files."
-    )  # -> log
-
-    chunk_start_time = time.time()
-    chunk_counter_key = f"chunk_counter:{batch_id}"
-
-    if not acquire_semaphore():
-        logger.warning("Semaphore limit reached, retrying chunk...")
-        raise Exception("Semaphore limit reached, try to retry.")
+    start_time = time.time()
+    
+    job_key = f"job:{chunk_data.get('job_id')}"
+    job_data = {}
 
     try:
-
-        asyncio.run(
-            _process_file_chunk(
-                chunk,
-                extracted_dir,
-                batch_uuid,
-                job_id,
-                job_data,
-                user_id,
-                company_id,
-            )
-        )
-
+        logger.info(f"Processing chunk: {chunk_data.get('chunk_id')}")
         CHUNKS_PROCESSED.inc()
-        print(f"----------metrics of CHUNKS_PROCESSED: {CHUNKS_PROCESSED}")
-        logger.info(
-            f"[Batch {batch_id}] Successfully processed chunk of {len(chunk)} files."
+        
+        # TODO should create a class for redis
+        # Manually get job_data from Redis
+        key_type = r.type(job_key).decode()
+
+        if key_type == "hash":
+            raw_data = r.hgetall(job_key)
+            job_data = {k.decode(): v.decode() for k, v in raw_data.items()}
+
+        elif key_type == "string":
+            job_value = r.get(job_key)
+            job_data = json.loads(job_value) if job_value else {}
+
+        elif key_type == "list":
+            list_data = r.lrange(job_key, 0, -1)
+            job_data = [item.decode() for item in list_data]
+            logger.info(f"Redis key {job_key} contains a list: {job_data}")
+
+        elif key_type == "set":
+            set_data = r.smembers(job_key)
+            job_data = {item.decode() for item in set_data}
+            logger.info(f"Redis key {job_key} contains a set: {job_data}")
+
+        elif key_type == "zset":
+            zset_data = r.zrange(job_key, 0, -1, withscores=True)
+            job_data = [(item.decode(), score) for item, score in zset_data]
+            logger.info(f"Redis key {job_key} contains a sorted set: {job_data}")
+        
+        elif key_type == "ReJSON-RL":
+            # RedisJSON key: use JSON.GET
+            job_json = r.execute_command("JSON.GET", job_key)
+            job_data = json.loads(job_json) if job_json else {}
+            logger.info(f"Loaded RedisJSON value from {job_key}: job_data -> {job_data}")
+
+        elif key_type == "none":
+            logger.warning(f"Redis key not found: {job_key}")
+            job_data = {}
+
+        else:
+            logger.warning(f"Unsupported Redis key type for {job_key}: {key_type}")
+            job_data = {} 
+
+        await _process_file_chunk(
+                chunk_data.get("chunk_files"),
+                chunk_data.get("extracted_dir"),
+                uuid.UUID(chunk_data.get("batch_id")),
+                chunk_data.get("job_id"),
+                # r.get_json_(f"job:{chunk_data.get('job_id')}"),
+                job_data,
+                chunk_data.get("user_id"),
+                chunk_data.get("company_id")
         )
+
+        # Increment processed chunks count
+        processed_count = r.incr(f"job:{chunk_data['job_id']}:chunks_processed")
+        total_chunks = int(r.get(f"job:{chunk_data['job_id']}:total_chunks"))
+
+        # Trigger finalizer when all chunks are processed
+        if processed_count == total_chunks:
+            logger.info(f"All chunks processed for job {chunk_data['job_id']}, triggering finalizer")
+            finalize_job_task.send(
+                chunk_data["batch_id"],
+                chunk_data["job_id"],
+                chunk_data["extracted_dir"],
+                chunk_data["user_id"],
+                chunk_data["company_id"],
+                chunk_data.get("send_invitations", False),
+            )
+    
     except Exception as e:
-        CHUNKS_FAILED.inc()
-        print(f"----------metrics of CHUNKS_FAILED: {CHUNKS_FAILED}")
-        logger.error(f"Error processing chunk: {e}")
-        raise Exception(f"processing chunk execution failed.")
+       logger.error(f"Failed chunk {chunk_data.get('chunk_id')}: {e}", exc_info=True)
+       CHUNKS_FAILED.inc()
+       r.lpush(f"death_chunk_queue:{chunk_data.get('job_id')}", json.dumps(chunk_data))
+
     finally:
+        duration = time.time() - start_time
+        CHUNK_PROCESS_DURATION.observe(duration)
 
-        chunk_duration = time.time() - chunk_start_time
-        CHUNK_PROCESS_DURATION.observe(chunk_duration)
-        print(f"----------metrics of CHUNK_PROCESS_DURATION: {CHUNK_PROCESS_DURATION}")
+# === 3. Retry Failed Chunks Actor ===
+@dramatiq.actor(actor_name="retry_failed_chunks_actor")
+def retry_failed_chunks_actor(job_id: str):
 
-        release_semaphore()
+    queue_name = f"death_chunk_queue:{job_id}"
+    logger.info(f"Retrying failed chunks for job_id: {job_id}")
 
-        # Decrement the Redis counter and delete directory if last
-        remaining = r.decr(chunk_counter_key)
-        if remaining == 0:
-            try:
-                shutil.rmtree(os.path.dirname(extracted_dir))
-                logger.info(f"Cleaned up directory after last chunk: {extracted_dir}")
-            except Exception as e:
-                logger.error(f"Failed to clean directory {extracted_dir}: {e}")
+    while True:
+        chunk_data_json = r.rpop(queue_name)
+        if not chunk_data_json:
+            break
+
+        chunk_data = json.loads(chunk_data_json)
+        logger.info(f"Retrying chunk: {chunk_data['chunk_id']}")
+        process_file_chunk_task.send_with_options(args=(chunk_data,))
+
+# final cleanup after process_chunk background actor
+@dramatiq.actor(actor_name="finalize_job_actor")
+async def finalize_job_task(batch_id: str, job_id: str, extracted_dir: str, user_id: str, company_id: str, send_invitations: bool):
+    from backend.upload.utils import _process_and_vectorize_candidates_batch
+
+    logger.info(f"Finalizing job: {job_id}")
+
+    try:
+        await _process_and_vectorize_candidates_batch(
+            uuid.UUID(batch_id), job_id, company_id, user_id, send_invitations
+        )
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            shutil.rmtree(extracted_dir)
+            logger.info(f"Successfully cleaned up directory: {extracted_dir}")
+
+        # Push Prometheus metrics
+        try:
+            push_to_gateway("http://pushgateway:9091", job="file_chunk_processor_metrics", registry=registry)
+        except Exception as e:
+            logger.warning(f"Could not push metrics to Prometheus PushGateway: {e}")
+
 
 
 @dramatiq.actor(actor_name="process_single_file_task", max_retries=3, max_backoff=5000)
