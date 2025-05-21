@@ -543,13 +543,13 @@ async def process_zip_extracted_files(
         raise
 
     else:   
-        retry_failed_chunks_actor.send_with_options(args=(job_id,), delay=30000)
-        # death_queue_key = f"death_chunk_queue:{job_id}"
-        # if r.llen(death_queue_key) > 0:
-        #     logger.info(f"Failed chunks found for job {job_id}, scheduling retry.")
-        #     retry_failed_chunks_actor.send_with_options(args=(job_id,), delay=30000)
-        # else:
-        #     logger.info(f"No failed chunks found for job {job_id}, skipping retry.")
+        # retry_failed_chunks_actor.send_with_options(args=(job_id,), delay=30000)
+        death_queue_key = f"death_chunk_queue:{job_id}"
+        if r.llen(death_queue_key) > 0:
+            logger.info(f"Failed chunks found for job {job_id}, scheduling retry.")
+            retry_failed_chunks_actor.send_with_options(args=(job_id,), delay=30000)
+        else:
+            logger.info(f"No failed chunks found for job {job_id}, skipping retry.")
             
         # async def run_and_cleanup():
         #     try:
