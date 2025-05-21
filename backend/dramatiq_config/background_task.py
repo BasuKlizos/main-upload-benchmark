@@ -237,7 +237,7 @@ async def zip_extract_and_prepare_actor(
             )
 
 
-@dramatiq.actor(actor_name="process_zip_file_task", max_retries=3, max_backoff=5000)
+@dramatiq.actor(actor_name="process_zip_file_actor", max_retries=3, max_backoff=5000)
 async def process_zip_task(
     batch_directory: str,
     batch_id: str,
@@ -245,12 +245,11 @@ async def process_zip_task(
     user_id: str,
     company_id: str,
     send_invitations: bool = False,
-    # request: Request = None,
     origin: str = None,
 ):
     from backend.upload.utils import (
         process_zip_extracted_files,
-        # send_processing_completion_email,
+        send_processing_completion_email,
     )
 
     batch_uuid = get_uuid(batch_id)
@@ -285,7 +284,6 @@ async def process_zip_task(
     finally:
         process_duration = time.time() - process_start_time
         PROCESS_DURATION.observe(process_duration)
-        # print(f"[Batch {batch_id}] PROCESS_DURATION observed: {process_duration:.2f}s")
         logger.info(
             f"[Batch {batch_id}] PROCESS_DURATION observed: {process_duration:.2f}s"
         )
