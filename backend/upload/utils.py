@@ -477,6 +477,7 @@ async def process_zip_extracted_files(
     from backend.dramatiq_config.background_task import (
         process_file_chunk_task,
         retry_failed_chunks_actor,
+        r,
     )
     logger.info(f"Starting to process files from {extracted_dir}")
 
@@ -489,6 +490,9 @@ async def process_zip_extracted_files(
         chunks = [files[i : i + settings.CHUNK_SIZE] for i in range(0, len(files), settings.CHUNK_SIZE)]
         job_data = redis.get_json_(f"job:{job_id}")
 
+        total_chunks_key = f"job:{job_id}:total_chunks"
+        r.set(total_chunks_key, len(chunks))
+
         for idx, chunk in enumerate(chunks):
             chunk_data = {
                 "chunk_id": f"{job_id}_chunk_{idx}",
@@ -496,6 +500,7 @@ async def process_zip_extracted_files(
                 "extracted_dir": extracted_dir,
                 "batch_id": str(batch_id),
                 "job_id": job_id,
+                "job_data": job_data,
                 "user_id": user_id,
                 "company_id": company_id,
                 "send_invitations": send_invitations,

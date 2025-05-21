@@ -308,54 +308,15 @@ async def process_file_chunk_task(
 ):
     from backend.upload.utils import _process_file_chunk
     start_time = time.time()
-    
-    job_key = f"job:{chunk_data.get('job_id')}"
-    job_data = {}
+    job_id = chunk_data.get("job_id")
+    job_key = f"job:{job_id}"
+    chunk_id = chunk_data.get("chunk_id")
 
     try:
         logger.info(f"Processing chunk: {chunk_data.get('chunk_id')}")
         CHUNKS_PROCESSED.inc()
-        
-        # TODO should create a class for redis
-        # Manually get job_data from Redis
-        key_type = r.type(job_key).decode()
 
-        if key_type == "hash":
-            raw_data = r.hgetall(job_key)
-            job_data = {k.decode(): v.decode() for k, v in raw_data.items()}
-
-        elif key_type == "string":
-            job_value = r.get(job_key)
-            job_data = json.loads(job_value) if job_value else {}
-
-        elif key_type == "list":
-            list_data = r.lrange(job_key, 0, -1)
-            job_data = [item.decode() for item in list_data]
-            logger.info(f"Redis key {job_key} contains a list: {job_data}")
-
-        elif key_type == "set":
-            set_data = r.smembers(job_key)
-            job_data = {item.decode() for item in set_data}
-            logger.info(f"Redis key {job_key} contains a set: {job_data}")
-
-        elif key_type == "zset":
-            zset_data = r.zrange(job_key, 0, -1, withscores=True)
-            job_data = [(item.decode(), score) for item, score in zset_data]
-            logger.info(f"Redis key {job_key} contains a sorted set: {job_data}")
-        
-        elif key_type == "ReJSON-RL":
-            # RedisJSON key: use JSON.GET
-            job_json = r.execute_command("JSON.GET", job_key)
-            job_data = json.loads(job_json) if job_json else {}
-            logger.info(f"Loaded RedisJSON value from {job_key}: job_data -> {job_data}")
-
-        elif key_type == "none":
-            logger.warning(f"Redis key not found: {job_key}")
-            job_data = {}
-
-        else:
-            logger.warning(f"Unsupported Redis key type for {job_key}: {key_type}")
-            job_data = {} 
+        job_data = chunk_data.get("job_data",{})
 
         await _process_file_chunk(
                 chunk_data.get("chunk_files"),
@@ -368,16 +329,16 @@ async def process_file_chunk_task(
                 chunk_data.get("company_id")
         )
 
-        # Increment processed chunks count
-        processed_count = r.incr(f"job:{chunk_data['job_id']}:chunks_processed")
-        total_chunks = int(r.get(f"job:{chunk_data['job_id']}:total_chunks"))
-
-        # Trigger finalizer when all chunks are processed
-        if processed_count == total_chunks:
-            logger.info(f"All chunks processed for job {chunk_data['job_id']}, triggering finalizer")
+        # Track chunk completion
+        processed_count = r.incr(f"{job_key}:chunks_processed")
+        total_chunks_raw = r.get(f"{job_key}:total_chunks")
+        
+        total_chunks = int(total_chunks_raw or 0)
+        if processed_count == total_chunks and total_chunks > 0:
+            logger.info(f"All chunks processed for job {job_id}, triggering finalizer")
             finalize_job_task.send(
                 chunk_data["batch_id"],
-                chunk_data["job_id"],
+                job_id,
                 chunk_data["extracted_dir"],
                 chunk_data["user_id"],
                 chunk_data["company_id"],
@@ -418,18 +379,30 @@ async def finalize_job_task(batch_id: str, job_id: str, extracted_dir: str, user
 
     try:
         await _process_and_vectorize_candidates_batch(
-            uuid.UUID(batch_id), job_id, company_id, user_id, send_invitations
+            uuid.UUID(batch_id),
+            job_id,
+            company_id,
+            user_id,
+            send_invitations
         )
-    finally:
-        with contextlib.suppress(FileNotFoundError):
-            shutil.rmtree(extracted_dir)
-            logger.info(f"Successfully cleaned up directory: {extracted_dir}")
 
-        # Push Prometheus metrics
+    except Exception as e:
+        logger.error(f"Error in finalizing job {job_id}: {e}", exc_info=True)
+
+    finally:
+        try:
+            shutil.rmtree(extracted_dir)
+            logger.info(f"Cleaned up directory: {extracted_dir}")
+        except FileNotFoundError:
+            logger.warning(f"Tried to delete missing directory: {extracted_dir}")
+        except Exception as e:
+            logger.error(f"Failed to cleanup directory {extracted_dir}: {e}", exc_info=True)
+
         try:
             push_to_gateway("http://pushgateway:9091", job="file_chunk_processor_metrics", registry=registry)
         except Exception as e:
             logger.warning(f"Could not push metrics to Prometheus PushGateway: {e}")
+
 
 
 
