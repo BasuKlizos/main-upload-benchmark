@@ -1,40 +1,58 @@
 import dramatiq
 import os
+import io
 import asyncio
 import uuid
 import time
 import redis
 import shutil
+import zipfile
+import base64
 # import threading
 
 
 from typing import List
 from dramatiq.brokers.redis import RedisBroker
-from dramatiq.middleware import Retries
+from dramatiq.middleware import Retries, AsyncIO
 from asgiref.sync import async_to_sync
+from bson import Binary, ObjectId
 # from prometheus_client import start_http_server
 
+from backend.upload.utils import (
+    get_job_data,
+)
+from backend.db_config.db import collection
+from backend.utils import (
+    create_batch_id,
+    get_current_time_utc,
+    get_temp_path,
+)
 from backend.config import settings
 from backend.logging_config.logger import logger
 from backend.monitor.metrices import (
     PROCESS_DURATION, 
     EMAIL_SENT,
+    FILE_COUNT,
+    UNSUPPORTED_FILES,
+    ZIP_FILES,
+    CREATED_FILES,
     push_to_gateway,
     registry
 )
 
 
 # Create a persistent asyncio event loop
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
+# loop = asyncio.new_event_loop()
+# asyncio.set_event_loop(loop)
 
-def run_in_event_loop(coro):
-    return loop.run_until_complete(coro)
+# def run_in_event_loop(coro):
+#     return loop.run_until_complete(coro)
 
 
 
 # Redis Broker Setup
 broker = RedisBroker(url="redis://redis:6379/0")
+broker.add_middleware(AsyncIO())
 broker.add_middleware(Retries())
 dramatiq.set_broker(broker)
 
@@ -46,6 +64,10 @@ dramatiq.set_broker(broker)
 
 # Redis Connection
 r = redis.Redis.from_url("redis://redis:6379/0")
+
+# Collections
+jobs = collection("jobs")
+batches = collection("batches")
 
 # Semaphore Config
 SEMAPHORE_KEY = "semaphore:file_chunks"
@@ -93,9 +115,136 @@ def release_semaphore():
             except redis.WatchError:
                 continue
 
+@dramatiq.actor(actor_name="zip_extraction_actor")
+async def zip_extract_and_prepare_actor(
+    job_id: str,
+    batch_name: str,
+    files_data: list,  # List of dicts: {filename, content_type, content}
+    user_details: dict,
+    batch_id: str,
+    send_invitations: bool,
+    origin:str,
+):
+    logger.info("zip_extract_and_prepare_actor triggered")
+    # batch_id = None
+
+    try:
+        print(f"----------user_details-----------:{user_details}")
+        logger.debug(f"Received batch_name: {batch_name} for job_id: {job_id}")
+        if await batches.find_one({"batch_name": batch_name}):
+            logger.warning(f"Batch name already taken: {batch_name}")
+            return
+        
+        job = await get_job_data(job_id)
+        logger.debug(f"Fetched job data: {job}")
+
+        # batch_id = create_batch_id()
+        batch_directory = os.path.join(get_temp_path(), str(batch_id))
+        os.makedirs(batch_directory, exist_ok=True)
+        logger.info(f"Batch directory created: {batch_directory}")
+
+        for file_data in files_data:
+            filename = file_data["filename"]
+            content_type = file_data["content_type"]
+            content = base64.b64decode(file_data["content"])
+
+            logger.info(f"Processing file: {filename}")
+            FILE_COUNT.inc()
+
+            if content_type not in [
+                "application/zip",
+                "application/x-zip-compressed",
+                "application/pdf",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ]:
+                UNSUPPORTED_FILES.inc()
+                logger.warning(f"Unsupported file skipped: {filename}")
+                continue
+
+            if content_type in ["application/zip", "application/x-zip-compressed"]:
+                ZIP_FILES.inc()
+                temp_extract_dir = os.path.join(batch_directory, "_temp_extract")
+                os.makedirs(temp_extract_dir, exist_ok=True)
+
+                with zipfile.ZipFile(io.BytesIO(content)) as zip_file:
+                    zip_file.extractall(temp_extract_dir)
+
+                for root, _, files in os.walk(temp_extract_dir):
+                    for fname in files:
+                        if fname.lower().endswith((".pdf", ".docx")):
+                            src = os.path.join(root, fname)
+                            base, ext = os.path.splitext(fname)
+                            dest = os.path.join(batch_directory, f"{base}_{get_current_time_utc().timestamp()}{ext}")
+                            shutil.move(src, dest)
+                            logger.debug(f"Moved {src} → {dest}")
+                shutil.rmtree(temp_extract_dir)
+
+            else:
+                CREATED_FILES.inc()
+                base, ext = os.path.splitext(filename)
+                dest = os.path.join(batch_directory, f"{base}_{get_current_time_utc().timestamp()}{ext}")
+                with open(dest, "wb") as f:
+                    f.write(content)
+                logger.debug(f"Saved file: {dest}")
+
+        file_count = len([
+            f for f in os.listdir(batch_directory)
+            if f.lower().endswith((".pdf", ".docx"))
+        ])
+
+        batch_uuid = get_uuid(batch_id)
+
+        await batches.insert_one({
+            "uploaded_by": ObjectId(user_details.get("company_id")),
+            "company_id": ObjectId(user_details.get("company_id")),
+            "batch_id": Binary.from_uuid(batch_uuid),
+            "batch_name": batch_name,
+            "upload_count": file_count,
+            "job_id": ObjectId(job_id),
+            "status": "processing",
+            "start_time": get_current_time_utc(),
+        })
+        logger.debug("Inserted batch metadata to database") 
+
+        await jobs.update_one(
+            {"_id": ObjectId(job_id)},
+            {
+                "$set": {"updated_at": get_current_time_utc()},
+                "$inc": {"selection_progress.total_candidate_count": file_count},
+            },
+        )
+        logger.debug("Updated job record with candidate count")
+
+        logger.info(f"Batch {batch_name} processed with {file_count} files")
+
+        
+        logger.debug(f"Sending background task with origin: {origin}") 
+
+        process_zip_task.send(
+            batch_directory=batch_directory,
+            # batch_id=str(batch_id),
+            batch_id=batch_id,
+            job_id=job_id,
+            user_id=user_details.get("user_id"),
+            company_id=user_details.get("company_id"),
+            send_invitations=send_invitations,
+            origin=origin
+        )
+
+    except Exception as e:
+        logger.exception(f"Error in zip_extract_and_prepare_actor: {e}")
+        
+        # Cleanup on error
+        try:
+            if batch_directory and os.path.exists(batch_directory):
+                shutil.rmtree(batch_directory)
+                logger.debug(f"Cleaned up temp directory after error: {batch_directory}")
+        except Exception as cleanup_error:
+            logger.error(f"Failed to cleanup temp directory: {cleanup_error}", exc_info=True)
+        
 
 @dramatiq.actor(actor_name="process_zip_file_task", max_retries=3, max_backoff=5000)
-def process_zip_task(
+async def process_zip_task(
     batch_directory: str,
     batch_id: str,
     job_id: str,
@@ -139,8 +288,18 @@ def process_zip_task(
         #     )
         # )
         
-        run_in_event_loop(
-            process_zip_extracted_files(
+        # run_in_event_loop(
+        #     process_zip_extracted_files(
+        #         extracted_dir=batch_directory,
+        #         batch_id=batch_uuid,
+        #         job_id=job_id,
+        #         user_id=user_id,
+        #         company_id=company_id,
+        #         send_invitations=send_invitations,
+        #     )
+        # )
+
+        await process_zip_extracted_files(
                 extracted_dir=batch_directory,
                 batch_id=batch_uuid,
                 job_id=job_id,
@@ -148,7 +307,6 @@ def process_zip_task(
                 company_id=company_id,
                 send_invitations=send_invitations,
             )
-        )
         logger.info(f"[Batch {batch_id}] ZIP processing completed successfully.")
 
         # async_to_sync(send_processing_completion_email)(

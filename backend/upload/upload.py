@@ -4,6 +4,8 @@ import time
 import os.path
 import shutil
 import zipfile
+import base64
+
 from typing import List
 
 from backend.upload.utils import (
@@ -12,7 +14,10 @@ from backend.upload.utils import (
 from backend.db_config.db import collection
 from backend.logging_config.logger import logger
 from backend.security.perms import Permission
-from backend.dramatiq_config.background_task import process_zip_task
+from backend.dramatiq_config.background_task import (
+    process_zip_task,
+    zip_extract_and_prepare_actor,
+)
 from backend.api.deps import get_user_details_factory
 from backend.types_ import UserData
 from backend.utils import (
@@ -76,126 +81,154 @@ async def upload_candidates(
     batch_id = None 
 
     try:
-        logger.debug(f"Received batch_name: {batch_name} for job_id: {job_id}")
-        # Check if batch_name is already taken
-        if await batches.find_one({"batch_name": batch_name}):
-            logger.warning(f"Batch name already taken: {batch_name}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Batch name already taken",
-            )
+        origin = request.headers.get("origin") if request else None
 
-        # Get job data
-        job = await get_job_data(job_id)
-        logger.debug(f"Fetched job data: {job}")
+        # logger.debug(f"Received batch_name: {batch_name} for job_id: {job_id}")
+        # # Check if batch_name is already taken
+        # if await batches.find_one({"batch_name": batch_name}):
+        #     logger.warning(f"Batch name already taken: {batch_name}")
+        #     raise HTTPException(
+        #         status_code=status.HTTP_400_BAD_REQUEST,
+        #         detail="Batch name already taken",
+        #     )
+
+        # # Get job data
+        # job = await get_job_data(job_id)
+        # logger.debug(f"Fetched job data: {job}")
 
         # Parse Role and User Details form UserData
         details, _ = user_data
         logger.debug(f"User details: {details}")
 
+        # Read and serialize uploaded files
+        files_data = []
+        for file in files:
+            content = await file.read()
+            files_data.append({
+                "filename": file.filename,
+                "content_type": file.content_type,
+                "content": base64.b64encode(content).decode("utf-8"),
+            })
+
+        file_count = len(files_data)
+
         batch_id = create_batch_id()
         logger.info(f"Starting new upload batch: {batch_id}")
+        
+        
+        logger.info(f"Send zip_file operations to background process: {batch_id}")
 
-        batch_directory = os.path.join(get_temp_path(), str(batch_id))
-        logger.info(f"Creating temp directory: {batch_directory}")
+        # Send task to actor
+        zip_extract_and_prepare_actor.send(
+            job_id=job_id,
+            batch_name=batch_name,
+            files_data=files_data,
+            user_details=details,
+            batch_id=str(batch_id),
+            send_invitations=send_invitations,
+            origin=origin,
+        )
 
-        os.makedirs(batch_directory, exist_ok=True)
+        # batch_directory = os.path.join(get_temp_path(), str(batch_id))
+        # logger.info(f"Creating temp directory: {batch_directory}")
 
-        for file in files:
-            logger.info(f"Processing uploaded file: {file.filename}")
-            FILE_COUNT.inc()
-            if file.content_type not in [
-                "application/zip",
-                "application/x-zip-compressed",
-                "application/pdf",
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            ]:
-                logger.error(f"Unsupported file type: {file.filename} -> {file.content_type}")
+        # os.makedirs(batch_directory, exist_ok=True)
 
-                UNSUPPORTED_FILES.inc()
+        # for file in files:
+        #     logger.info(f"Processing uploaded file: {file.filename}")
+        #     FILE_COUNT.inc()
+        #     if file.content_type not in [
+        #         "application/zip",
+        #         "application/x-zip-compressed",
+        #         "application/pdf",
+        #         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        #     ]:
+        #         logger.error(f"Unsupported file type: {file.filename} -> {file.content_type}")
+
+        #         UNSUPPORTED_FILES.inc()
                 
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"File {file.filename} is not supported. Only ZIP files are allowed",
-                )
+        #         raise HTTPException(
+        #             status_code=status.HTTP_400_BAD_REQUEST,
+        #             detail=f"File {file.filename} is not supported. Only ZIP files are allowed",
+        #         )
 
-            # Check file type and process accordingly
-            if file.content_type in ["application/zip", "application/x-zip-compressed"]:
-                logger.debug(f"ZIP file detected: {file.filename}")
-                ZIP_FILES.inc()
+        #     # Check file type and process accordingly
+        #     if file.content_type in ["application/zip", "application/x-zip-compressed"]:
+        #         logger.debug(f"ZIP file detected: {file.filename}")
+        #         ZIP_FILES.inc()
 
-                contents = await file.read()
-                temp_extract_dir = os.path.join(batch_directory, "_temp_extract")
-                os.makedirs(temp_extract_dir, exist_ok=True)
+        #         contents = await file.read()
+        #         temp_extract_dir = os.path.join(batch_directory, "_temp_extract")
+        #         os.makedirs(temp_extract_dir, exist_ok=True)
 
-                with zipfile.ZipFile(io.BytesIO(contents)) as zip_file:
-                    zip_file.extractall(temp_extract_dir)
+        #         with zipfile.ZipFile(io.BytesIO(contents)) as zip_file:
+        #             zip_file.extractall(temp_extract_dir)
 
-                # Find all files recursively and move them directly to batch directory
-                for root, _, files in os.walk(temp_extract_dir):
-                    for filename in files:
-                        if filename.lower().endswith((".pdf", ".docx")):
-                            src_path = os.path.join(root, filename)
-                            # Generate unique name to avoid conflicts
-                            base, ext = os.path.splitext(filename)
-                            # Use timestamp to ensure uniqueness
-                            dest_filename = f"{base}_{get_current_time_utc().timestamp()}{ext}"
-                            dest_path = os.path.join(batch_directory, dest_filename)
-                            shutil.move(src_path, dest_path)
-                            logger.debug(f"Moved file from {src_path} to {dest_path}")
+        #         # Find all files recursively and move them directly to batch directory
+        #         for root, _, files in os.walk(temp_extract_dir):
+        #             for filename in files:
+        #                 if filename.lower().endswith((".pdf", ".docx")):
+        #                     src_path = os.path.join(root, filename)
+        #                     # Generate unique name to avoid conflicts
+        #                     base, ext = os.path.splitext(filename)
+        #                     # Use timestamp to ensure uniqueness
+        #                     dest_filename = f"{base}_{get_current_time_utc().timestamp()}{ext}"
+        #                     dest_path = os.path.join(batch_directory, dest_filename)
+        #                     shutil.move(src_path, dest_path)
+        #                     logger.debug(f"Moved file from {src_path} to {dest_path}")
 
-                # Clean up temporary extraction directory
-                shutil.rmtree(temp_extract_dir)
-                logger.debug(f"Cleaned up temporary ZIP extraction directory: {temp_extract_dir}")
+        #         # Clean up temporary extraction directory
+        #         shutil.rmtree(temp_extract_dir)
+        #         logger.debug(f"Cleaned up temporary ZIP extraction directory: {temp_extract_dir}")
 
-            elif file.content_type in ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
-                logger.debug(f"Non-ZIP file detected: {file.filename}")
-                CREATED_FILES.inc()
+        #     elif file.content_type in ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
+        #         logger.debug(f"Non-ZIP file detected: {file.filename}")
+        #         CREATED_FILES.inc()
 
-                base, ext = os.path.splitext(file.filename)
-                # Use timestamp to ensure uniqueness
-                dest_filename = f"{base}_{get_current_time_utc().timestamp()}{ext}"
-                file_path = os.path.join(batch_directory, dest_filename)
-                with open(file_path, "wb") as f:
-                    f.write(await file.read())
-                logger.debug(f"Saved file to: {file_path}")
-            else:
-                UNSUPPORTED_FILES.inc()
+        #         base, ext = os.path.splitext(file.filename)
+        #         # Use timestamp to ensure uniqueness
+        #         dest_filename = f"{base}_{get_current_time_utc().timestamp()}{ext}"
+        #         file_path = os.path.join(batch_directory, dest_filename)
+        #         with open(file_path, "wb") as f:
+        #             f.write(await file.read())
+        #         logger.debug(f"Saved file to: {file_path}")
+        #     else:
+        #         UNSUPPORTED_FILES.inc()
 
-                logger.error(f"Invalid file type for {file.filename}: {file.content_type}, Skipping file")
-                continue
+        #         logger.error(f"Invalid file type for {file.filename}: {file.content_type}, Skipping file")
+        #         continue
 
-        # Get the count of files in the batch directory
-        file_count = len([f for f in os.listdir(batch_directory) if f.lower().endswith((".pdf", ".docx"))])
-        logger.info(f"Total valid files to process: {file_count}")
+        # # Get the count of files in the batch directory
+        # file_count = len([f for f in os.listdir(batch_directory) if f.lower().endswith((".pdf", ".docx"))])
+        # logger.info(f"Total valid files to process: {file_count}")
 
-        # Insert batch record and update job count before background processing
-        await batches.insert_one(
-            {
-                "uploaded_by": ObjectId(details.get("user_id")),
-                "company_id": ObjectId(details.get("company_id")),
-                "batch_id": Binary.from_uuid(batch_id),
-                "batch_name": batch_name,
-                "upload_count": file_count,
-                "job_id": ObjectId(job_id),
-                "status": "processing",
-                "start_time": get_current_time_utc(),
-            }
-        )
-        logger.debug("Inserted batch metadata to database") 
+        # # Insert batch record and update job count before background processing
+        # await batches.insert_one(
+        #     {
+        #         "uploaded_by": ObjectId(details.get("user_id")),
+        #         "company_id": ObjectId(details.get("company_id")),
+        #         "batch_id": Binary.from_uuid(batch_id),
+        #         "batch_name": batch_name,
+        #         "upload_count": file_count,
+        #         "job_id": ObjectId(job_id),
+        #         "status": "processing",
+        #         "start_time": get_current_time_utc(),
+        #     }
+        # )
+        # logger.debug("Inserted batch metadata to database") 
 
-        await jobs.update_one(
-            {"_id": ObjectId(job_id)},
-            {"$set": {"updated_at": get_current_time_utc()}, "$inc": {"selection_progress.total_candidate_count": file_count}},
-        )
-        logger.debug("Updated job record with candidate count")
+        # await jobs.update_one(
+        #     {"_id": ObjectId(job_id)},
+        #     {"$set": {"updated_at": get_current_time_utc()}, "$inc": {"selection_progress.total_candidate_count": file_count}},
+        # )
+        # logger.debug("Updated job record with candidate count")
 
         UPLOAD_SUCCESS.inc()
 
         # Create response before background processing
         response = JSONResponse(
             content={
-                "msg": f"Processing of {file_count} candidates started. You will receive an email when complete",
+                "msg": f"Processing of {file_count} zip files started. You will receive an email when complete",
                 "batch_id": str(batch_id),
                 "status": True,
             },
@@ -238,29 +271,29 @@ async def upload_candidates(
         # asyncio.create_task(background_processing())
         
         
-        origin = request.headers.get("origin") if request else None
-        logger.debug(f"Sending background task with origin: {origin}") 
+        # origin = request.headers.get("origin") if request else None
+        # logger.debug(f"Sending background task with origin: {origin}") 
 
-        process_zip_task.send(
-            batch_directory=batch_directory,
-            batch_id=str(batch_id),
-            job_id=job_id,
-            user_id=details.get("user_id"),
-            company_id=details.get("company_id"),
-            send_invitations=send_invitations,
-            origin=origin
-        )
+        # process_zip_task.send(
+        #     batch_directory=batch_directory,
+        #     batch_id=str(batch_id),
+        #     job_id=job_id,
+        #     user_id=details.get("user_id"),
+        #     company_id=details.get("company_id"),
+        #     send_invitations=send_invitations,
+        #     origin=origin
+        # )
         
         return response
 
     except Exception as e:
         logger.exception(f"Error in upload batch {batch_id}: {str(e)}")
-        # Cleanup on error
-        try:
-            shutil.rmtree(batch_directory)
-            logger.debug(f"Cleaned up temp directory after error: {batch_directory}")
-        except Exception as cleanup_error:
-            logger.error(f"Failed to cleanup temp directory: {cleanup_error}", exc_info=True)
+        # # Cleanup on error
+        # try:
+        #     shutil.rmtree(batch_directory)
+        #     logger.debug(f"Cleaned up temp directory after error: {batch_directory}")
+        # except Exception as cleanup_error:
+        #     logger.error(f"Failed to cleanup temp directory: {cleanup_error}", exc_info=True)
         
         UPLOAD_FAILURE.inc()
         
