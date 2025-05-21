@@ -329,22 +329,8 @@ async def process_file_chunk_task(
                 chunk_data.get("company_id")
         )
 
-        # Track chunk completion
-        processed_count = r.incr(f"{job_key}:chunks_processed")
-        total_chunks_raw = r.get(f"{job_key}:total_chunks")
-        
-        total_chunks = int(total_chunks_raw or 0)
-        if processed_count == total_chunks and total_chunks > 0:
-            logger.info(f"All chunks processed for job {job_id}, triggering finalizer")
-            finalize_job_task.send(
-                chunk_data["batch_id"],
-                job_id,
-                chunk_data["extracted_dir"],
-                chunk_data["user_id"],
-                chunk_data["company_id"],
-                chunk_data.get("send_invitations", False),
-            )
-    
+        r.incr(f"{job_key}:chunks_processed")
+           
     except Exception as e:
        logger.error(f"Failed chunk {chunk_data.get('chunk_id')}: {e}", exc_info=True)
        CHUNKS_FAILED.inc()
@@ -358,17 +344,62 @@ async def process_file_chunk_task(
 @dramatiq.actor(actor_name="retry_failed_chunks_actor")
 def retry_failed_chunks_actor(job_id: str):
 
-    queue_name = f"death_chunk_queue:{job_id}"
-    logger.info(f"Retrying failed chunks for job_id: {job_id}")
+    death_queue_key = f"death_chunk_queue:{job_id}"
+    retry_counter_key = f"chunk_retry_counter:{job_id}"
 
-    while True:
-        chunk_data_json = r.rpop(queue_name)
-        if not chunk_data_json:
-            break
+    failed_chunks = r.lrange(death_queue_key, 0, -1)
+    if not failed_chunks:
+        logger.info(f"No failed chunks left for job {job_id}. Finalizing job.")
+        job_metadata = r.get_json_(f"job:{job_id}")
+        if job_metadata:
+            finalize_job_task.send_with_options(
+                args=(
+                    job_metadata["batch_id"],
+                    job_id,
+                    job_metadata["extracted_dir"],
+                    job_metadata["user_id"],
+                    job_metadata["company_id"],
+                    job_metadata.get("send_invitations", False),
+                )
+            )
+        return
 
-        chunk_data = json.loads(chunk_data_json)
-        logger.info(f"Retrying chunk: {chunk_data['chunk_id']}")
+    logger.info(f"Retrying {len(failed_chunks)} failed chunks for job {job_id}")
+
+    retryable_chunks_remaining = []
+
+    for chunk_bytes in failed_chunks:
+        chunk_data = json.loads(chunk_bytes.decode("utf-8"))
+        chunk_id = chunk_data["chunk_id"]
+
+        retry_count = int(r.hget(retry_counter_key, chunk_id) or 0)
+
+        if retry_count >= 3:
+            logger.warning(f"Chunk {chunk_id} failed {retry_count} times. Skipping further retries.")
+            continue
+
+        logger.info(f"Retrying chunk {chunk_id} (Attempt {retry_count + 1})")
         process_file_chunk_task.send_with_options(args=(chunk_data,))
+        r.hset(retry_counter_key, chunk_id, retry_count + 1)
+        retryable_chunks_remaining.append(chunk_data)
+
+    r.delete(death_queue_key)
+
+    if not retryable_chunks_remaining:
+        logger.info(f"No more retryable chunks left for job {job_id}. Finalizing job.")
+        job_metadata = r.get_json_(f"job:{job_id}")
+        if job_metadata:
+            finalize_job_task.send_with_options(
+                args=(
+                    job_metadata["batch_id"],
+                    job_id,
+                    job_metadata["extracted_dir"],
+                    job_metadata["user_id"],
+                    job_metadata["company_id"],
+                    job_metadata.get("send_invitations", False),
+                )
+            )
+
 
 # final cleanup after process_chunk background actor
 @dramatiq.actor(actor_name="finalize_job_actor")
