@@ -64,6 +64,30 @@ def get_uuid(batch_id: str):
     return None
 
 
+
+# In your resume/recovery logic on startup or resume
+
+async def resume_processing_from_backup(job_id: str, batch_id: str, job_data: dict, user_id: str, company_id: str):
+    from backend.dramatiq_config.background_task import process_single_file_task
+
+    queue = f"single_file_backup_queue:{job_id}"
+    pending_files = r.lrange(queue, 0, -1)
+
+    if pending_files:
+        logger.info(f"[Recovery] Found {len(pending_files)} unprocessed files in {queue}. Resuming...")
+        for file_path in pending_files:
+            process_single_file_task.send(
+                file_path.decode(),
+                batch_id,
+                job_id,
+                job_data,
+                user_id,
+                company_id
+            )
+    else:
+        logger.info("[Recovery] No pending files in backup queue. Proceed with fresh batch.")
+
+
 @dramatiq.actor(actor_name="zip_extraction_actor")
 async def zip_extract_and_prepare_actor(
     job_id: str,
@@ -480,6 +504,9 @@ async def process_single_file_task(
     finally:
         # Decrement files_to_process count
         r.decr(f"files_to_process:{job_id_str}")
+        
+        # Remove from backup queue
+        r.lrem(f"single_file_backup_queue:{job_id}", 0, file_path)
 
 
 @dramatiq.actor(actor_name="single_file_retry_actor")

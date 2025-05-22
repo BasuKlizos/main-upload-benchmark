@@ -6,6 +6,7 @@ import contextlib
 import shutil
 import string
 import uuid
+import json
 from datetime import timedelta
 from typing import Any, List, Optional
 from urllib.parse import quote
@@ -233,6 +234,20 @@ async def _process_file_chunk(chunk: List[str], extracted_dir: str, batch_id: uu
     total_files = len(chunk)
     r.set(f"files_to_process:{job_id}", total_files)
 
+    # Save job context for recovery
+    r.set(
+    "last_job_context",
+        json.dumps({
+            "job_id": job_id,
+            "batch_id": str(batch_id),
+            "job_data": job_data,
+            "user_id": user_id,
+            "company_id": company_id
+        })
+    )
+
+    backup_queue = f"single_file_backup_queue:{job_id}"
+
     # tasks = [_process_single_file(os.path.join(extracted_dir, file), job_data.get("job_id"), user_id) for file in chunk]
     # results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -264,6 +279,10 @@ async def _process_file_chunk(chunk: List[str], extracted_dir: str, batch_id: uu
 
     for file_name in chunk:
         file_path = os.path.join(extracted_dir, file_name)
+        
+        # Backup the file path
+        r.rpush(backup_queue, file_path)
+
         process_single_file_task.send(
             file_path,
             str(batch_id),
