@@ -99,7 +99,6 @@ async def zip_extract_and_prepare_actor(
     origin: str,
 ):
     logger.info("zip_extract_and_prepare_actor triggered")
-    # batch_id = None
 
     try:
         logger.info(f"----------user_details-----------:{user_details}")
@@ -111,7 +110,6 @@ async def zip_extract_and_prepare_actor(
         job = await get_job_data(job_id)
         logger.debug(f"Fetched job data: {job}")
 
-        # batch_id = create_batch_id()
         batch_directory = os.path.join(get_temp_path(), str(batch_id))
         os.makedirs(batch_directory, exist_ok=True)
         logger.info(f"Batch directory created: {batch_directory}")
@@ -226,6 +224,15 @@ async def zip_extract_and_prepare_actor(
             logger.error(
                 f"Failed to cleanup temp directory: {cleanup_error}", exc_info=True
             )
+    finally:
+        try:
+            push_to_gateway(
+                "http://pushgateway:9091",
+                job="background_process_zip_task",
+                registry=registry,
+            )
+        except Exception as e:
+            logger.warning(f"Could not push metrics to Prometheus PushGateway: {e}")
 
 
 @dramatiq.actor(actor_name="process_zip_file_actor", max_retries=0)
@@ -278,14 +285,6 @@ async def process_zip_task(
         logger.info(
             f"[Batch {batch_id}] PROCESS_DURATION observed: {process_duration:.2f}s"
         )
-        try:
-            push_to_gateway(
-                "http://pushgateway:9091",
-                job="background_process_zip_task",
-                registry=registry,
-            )
-        except Exception as e:
-            logger.warning(f"Could not push metrics to Prometheus PushGateway: {e}")
 
 
 @dramatiq.actor(actor_name="process_file_chunk_actor_main_queue", max_retries=0)
