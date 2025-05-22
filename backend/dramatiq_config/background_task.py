@@ -323,7 +323,6 @@ async def process_file_chunk_task(
                 chunk_data.get("extracted_dir"),
                 uuid.UUID(chunk_data.get("batch_id")),
                 chunk_data.get("job_id"),
-                # r.get_json_(f"job:{chunk_data.get('job_id')}"),
                 job_data,
                 chunk_data.get("user_id"),
                 chunk_data.get("company_id")
