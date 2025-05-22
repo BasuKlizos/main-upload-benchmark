@@ -54,23 +54,6 @@ r = redis.Redis.from_url("redis://redis:6379/0")
 jobs = collection("jobs")
 batches = collection("batches")
 
-# Semaphore Config
-SEMAPHORE_KEY = "semaphore:file_chunks"
-MAX_CONCURRENCY = settings.MAX_CONCURRENCY or 8
-
-# Lua Script for Atomic Acquire
-SEMAPHORE_LUA = """
-local current = redis.call('get', KEYS[1])
-if not current then current = 0 end
-current = tonumber(current)
-if current < tonumber(ARGV[1]) then
-  redis.call('incr', KEYS[1])
-  return 1
-else
-  return 0
-end
-"""
-
 
 def get_uuid(batch_id: str):
     if isinstance(batch_id, str):
@@ -79,26 +62,6 @@ def get_uuid(batch_id: str):
         except ValueError:
             print(f"Invalid UUID string: {batch_id}")
     return None
-
-
-def acquire_semaphore():
-    result = r.eval(SEMAPHORE_LUA, 1, SEMAPHORE_KEY, MAX_CONCURRENCY)
-    return result == 1
-
-
-def release_semaphore():
-    with r.pipeline() as pipe:
-        while True:
-            try:
-                pipe.watch(SEMAPHORE_KEY)
-                current = int(pipe.get(SEMAPHORE_KEY) or 0)
-                new_value = max(0, current - 1)
-                pipe.multi()
-                pipe.set(SEMAPHORE_KEY, new_value)
-                pipe.execute()
-                break
-            except redis.WatchError:
-                continue
 
 
 @dramatiq.actor(actor_name="zip_extraction_actor")
@@ -513,10 +476,11 @@ async def process_single_file_task(
         )
         # `single_file_death_queue` here
         r.lpush(f"single_file_death_queue:{job_id}", file_path)
-    
+
     finally:
         # Decrement files_to_process count
         r.decr(f"files_to_process:{job_id_str}")
+
 
 @dramatiq.actor(actor_name="single_file_retry_actor")
 def single_file_retry_actor(
