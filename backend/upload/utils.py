@@ -248,35 +248,6 @@ async def _process_file_chunk(chunk: List[str], extracted_dir: str, batch_id: uu
 
     backup_queue = f"single_file_backup_queue:{job_id}"
 
-    # tasks = [_process_single_file(os.path.join(extracted_dir, file), job_data.get("job_id"), user_id) for file in chunk]
-    # results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    # valid_results, invalid_results, error_count = [], [], 0
-    # current_time = get_current_time_utc()
-
-    # for result in results:
-    #     if isinstance(result, Exception):
-    #         error_count += 1
-    #         logger.error(f"Task failed: {str(result)}", exc_info=True)
-    #     elif isinstance(result, dict) and result.get("error"):
-    #         invalid_results.append(
-    #             {
-    #                 **result,
-    #                 "batch_id": Binary.from_uuid(batch_id),
-    #                 "job_id": ObjectId(job_id),
-    #                 "company_id": ObjectId(company_id),
-    #                 "created_at": current_time,
-    #                 "updated_at": current_time,
-    #             }
-    #         )
-    #     elif isinstance(result, CVParseResponse):
-    #         valid_results.append(result)
-
-    # logger.info(f"Chunk processed: {len(valid_results)} successes, {error_count} errors")
-
-    # await _insert_candidates(valid_results, batch_id, job_id, company_id, user_id, job_data, current_time)
-    # await _insert_candidate_errors(invalid_results)
-
     for file_name in chunk:
         file_path = os.path.join(extracted_dir, file_name)
         
