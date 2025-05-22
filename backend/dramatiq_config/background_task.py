@@ -102,7 +102,7 @@ async def zip_extract_and_prepare_actor(
     # batch_id = None
 
     try:
-        print(f"----------user_details-----------:{user_details}")
+        logger.info(f"----------user_details-----------:{user_details}")
         logger.debug(f"Received batch_name: {batch_name} for job_id: {job_id}")
         if await batches.find_one({"batch_name": batch_name}):
             logger.warning(f"Batch name already taken: {batch_name}")
