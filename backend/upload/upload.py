@@ -130,7 +130,7 @@ async def upload_candidates(
         )
 
     finally:
-        duration = time.time() - start_time
+        duration = (time.time() - start_time) * 1000
         UPLOAD_DURATION.observe(duration)
         try:
             push_to_gateway(

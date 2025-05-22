@@ -280,7 +280,7 @@ async def process_zip_task(
         raise RuntimeError("process_zip_file_task execution failed.") from e
 
     finally:
-        process_duration = time.time() - process_start_time
+        process_duration = (time.time() - process_start_time) * 1000
         PROCESS_DURATION.observe(process_duration)
         logger.info(
             f"[Batch {batch_id}] PROCESS_DURATION observed: {process_duration:.2f}s"
