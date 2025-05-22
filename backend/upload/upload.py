@@ -35,6 +35,8 @@ from backend.monitor.metrices import (
 
 router = APIRouter()
 
+# Collections
+batches = collection("batches")
 
 @router.post(
     "/bulk",
@@ -65,6 +67,12 @@ async def upload_candidates(
 
     try:
         origin = request.headers.get("origin") if request else None
+        
+        if await batches.find_one({"batch_name": batch_name}):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Batch name already taken."
+            )
 
         # Parse Role and User Details form UserData
         details, _ = user_data
