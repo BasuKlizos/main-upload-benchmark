@@ -222,36 +222,81 @@ async def _insert_candidate_errors(invalid_results):
 
 
 async def _process_file_chunk(chunk: List[str], extracted_dir: str, batch_id: uuid.UUID, job_id: str, job_data: dict, user_id: str, company_id: str):
+    from backend.dramatiq_config.background_task import (
+        process_single_file_task,
+        single_file_retry_actor,
+        r,
+    )
+
     logger.info(f"Processing chunk of {len(chunk)} files from {extracted_dir}")
 
-    tasks = [_process_single_file(os.path.join(extracted_dir, file), job_data.get("job_id"), user_id) for file in chunk]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    total_files = len(chunk)
+    r.set(f"files_to_process:{job_id}", total_files)
 
-    valid_results, invalid_results, error_count = [], [], 0
-    current_time = get_current_time_utc()
+    # tasks = [_process_single_file(os.path.join(extracted_dir, file), job_data.get("job_id"), user_id) for file in chunk]
+    # results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    for result in results:
-        if isinstance(result, Exception):
-            error_count += 1
-            logger.error(f"Task failed: {str(result)}", exc_info=True)
-        elif isinstance(result, dict) and result.get("error"):
-            invalid_results.append(
-                {
-                    **result,
-                    "batch_id": Binary.from_uuid(batch_id),
-                    "job_id": ObjectId(job_id),
-                    "company_id": ObjectId(company_id),
-                    "created_at": current_time,
-                    "updated_at": current_time,
-                }
-            )
-        elif isinstance(result, CVParseResponse):
-            valid_results.append(result)
+    # valid_results, invalid_results, error_count = [], [], 0
+    # current_time = get_current_time_utc()
 
-    logger.info(f"Chunk processed: {len(valid_results)} successes, {error_count} errors")
+    # for result in results:
+    #     if isinstance(result, Exception):
+    #         error_count += 1
+    #         logger.error(f"Task failed: {str(result)}", exc_info=True)
+    #     elif isinstance(result, dict) and result.get("error"):
+    #         invalid_results.append(
+    #             {
+    #                 **result,
+    #                 "batch_id": Binary.from_uuid(batch_id),
+    #                 "job_id": ObjectId(job_id),
+    #                 "company_id": ObjectId(company_id),
+    #                 "created_at": current_time,
+    #                 "updated_at": current_time,
+    #             }
+    #         )
+    #     elif isinstance(result, CVParseResponse):
+    #         valid_results.append(result)
 
-    await _insert_candidates(valid_results, batch_id, job_id, company_id, user_id, job_data, current_time)
-    await _insert_candidate_errors(invalid_results)
+    # logger.info(f"Chunk processed: {len(valid_results)} successes, {error_count} errors")
+
+    # await _insert_candidates(valid_results, batch_id, job_id, company_id, user_id, job_data, current_time)
+    # await _insert_candidate_errors(invalid_results)
+
+    for file_name in chunk:
+        file_path = os.path.join(extracted_dir, file_name)
+        process_single_file_task.send(
+            file_path,
+            str(batch_id),
+            job_id,
+            job_data,
+            user_id,
+            company_id
+        )
+    
+    logger.info(f"All files from chunk dispatched to process_single_file_task.")
+
+    # Wait until all files are processed
+    while True:
+        try:
+            remaining = int(r.get(f"files_to_process:{job_id}") or 0)
+        except Exception as e:
+            logger.error(f"Error checking file progress from Redis: {e}", exc_info=True)
+            await asyncio.sleep(0.3)
+            continue
+
+        if remaining <= 0:
+            break
+
+        logger.info(f"{remaining} files still being processed...")
+        await asyncio.sleep(0.3)
+
+    # Check death queue and trigger retry
+    failed_count = r.llen(f"single_file_death_queue:{job_id}")
+    if failed_count > 0:
+        logger.info(f"{failed_count} files failed. Triggering retry actor...")
+        single_file_retry_actor.send(job_id, str(batch_id), job_data, user_id, company_id)
+    else:
+        logger.info("All files processed successfully. No retry needed.")
 
 
 async def _send_interview_invitations(candidates: list[dict], company_name: str, job_id: str, job_title: str, company_id: str) -> None:

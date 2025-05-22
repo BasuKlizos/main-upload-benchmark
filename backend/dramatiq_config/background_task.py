@@ -303,41 +303,41 @@ async def process_zip_task(
 
 
 @dramatiq.actor(actor_name="process_file_chunk_actor_main_queue", max_retries=0)
-async def process_file_chunk_task(
-    chunk_data: dict
-):
+async def process_file_chunk_task(chunk_data: dict):
     from backend.upload.utils import _process_file_chunk
+
     start_time = time.time()
     job_id = chunk_data.get("job_id")
     job_key = f"job:{job_id}"
     chunk_id = chunk_data.get("chunk_id")
 
     try:
-        logger.info(f"Processing chunk: {chunk_data.get('chunk_id')}")
+        logger.info(f"Processing chunk: {chunk_id}")
         CHUNKS_PROCESSED.inc()
 
-        job_data = chunk_data.get("job_data",{})
+        job_data = chunk_data.get("job_data", {})
 
         await _process_file_chunk(
-                chunk_data.get("chunk_files"),
-                chunk_data.get("extracted_dir"),
-                uuid.UUID(chunk_data.get("batch_id")),
-                chunk_data.get("job_id"),
-                job_data,
-                chunk_data.get("user_id"),
-                chunk_data.get("company_id")
+            chunk_data.get("chunk_files"),
+            chunk_data.get("extracted_dir"),
+            uuid.UUID(chunk_data.get("batch_id")),
+            chunk_data.get("job_id"),
+            job_data,
+            chunk_data.get("user_id"),
+            chunk_data.get("company_id"),
         )
 
         r.incr(f"{job_key}:chunks_processed")
-           
+
     except Exception as e:
-       logger.error(f"Failed chunk {chunk_data.get('chunk_id')}: {e}", exc_info=True)
-       CHUNKS_FAILED.inc()
-       r.lpush(f"death_chunk_queue:{chunk_data.get('job_id')}", json.dumps(chunk_data))
+        logger.error(f"Failed chunk {chunk_data.get('chunk_id')}: {e}", exc_info=True)
+        CHUNKS_FAILED.inc()
+        r.lpush(f"death_chunk_queue:{chunk_data.get('job_id')}", json.dumps(chunk_data))
 
     finally:
         duration = time.time() - start_time
         CHUNK_PROCESS_DURATION.observe(duration)
+
 
 # === 3. Retry Failed Chunks Actor ===
 @dramatiq.actor(actor_name="retry_failed_chunks_actor")
@@ -374,7 +374,9 @@ def retry_failed_chunks_actor(job_id: str):
         retry_count = int(r.hget(retry_counter_key, chunk_id) or 0)
 
         if retry_count >= 3:
-            logger.warning(f"Chunk {chunk_id} failed {retry_count} times. Skipping further retries.")
+            logger.warning(
+                f"Chunk {chunk_id} failed {retry_count} times. Skipping further retries."
+            )
             continue
 
         logger.info(f"Retrying chunk {chunk_id} (Attempt {retry_count + 1})")
@@ -402,18 +404,21 @@ def retry_failed_chunks_actor(job_id: str):
 
 # final cleanup after process_chunk background actor
 @dramatiq.actor(actor_name="finalize_job_actor")
-async def finalize_job_task(batch_id: str, job_id: str, extracted_dir: str, user_id: str, company_id: str, send_invitations: bool):
+async def finalize_job_task(
+    batch_id: str,
+    job_id: str,
+    extracted_dir: str,
+    user_id: str,
+    company_id: str,
+    send_invitations: bool,
+):
     from backend.upload.utils import _process_and_vectorize_candidates_batch
 
     logger.info(f"Finalizing job: {job_id}")
 
     try:
         await _process_and_vectorize_candidates_batch(
-            uuid.UUID(batch_id),
-            job_id,
-            company_id,
-            user_id,
-            send_invitations
+            uuid.UUID(batch_id), job_id, company_id, user_id, send_invitations
         )
 
     except Exception as e:
@@ -426,46 +431,136 @@ async def finalize_job_task(batch_id: str, job_id: str, extracted_dir: str, user
         except FileNotFoundError:
             logger.warning(f"Tried to delete missing directory: {extracted_dir}")
         except Exception as e:
-            logger.error(f"Failed to cleanup directory {extracted_dir}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to cleanup directory {extracted_dir}: {e}", exc_info=True
+            )
 
         try:
-            push_to_gateway("http://pushgateway:9091", job="file_chunk_processor_metrics", registry=registry)
+            push_to_gateway(
+                "http://pushgateway:9091",
+                job="file_chunk_processor_metrics",
+                registry=registry,
+            )
         except Exception as e:
             logger.warning(f"Could not push metrics to Prometheus PushGateway: {e}")
 
 
+@dramatiq.actor(actor_name="process_single_file_actor", max_retries=0)
+async def process_single_file_task(
+    file_path: str,
+    batch_id_str: str,
+    job_id_str: str,
+    job_data: dict,
+    user_id: str,
+    company_id: str,
+):
 
-
-@dramatiq.actor(actor_name="process_single_file_task", max_retries=3, max_backoff=5000)
-def process_single_file_task(file_path: str, job_id: str, user_id: str, task_id: str):
-    from backend.upload.utils import _process_single_file
-    from backend.monitor.metrices import (
-        FILE_PROCESS_DURATION,
-        FILES_PROCESSED,
-        FILES_FAILED,
+    from backend.upload.utils import (
+        _process_single_file,
+        _insert_candidates,
+        _insert_candidate_errors,
     )
+    from backend.schemas.candidate import CVParseResponse
 
-    result_key = f"task_result:{task_id}"
-    start = time.time()
+    batch_id = get_uuid(batch_id_str)
+    job_id = ObjectId(job_id_str)
+    company_id = ObjectId(company_id)
 
-    logger.info(f"[Task {task_id}] Processing single file: {file_path}")
+    logger.info(f"[SingleFileActor] Processing file: {file_path}")
 
     try:
-        result = asyncio.run(_process_single_file(file_path, job_id, user_id))
-        # result = async_to_sync(_process_single_file)(file_path, job_id, user_id)
-        r.set(result_key, str(result))
-        FILES_PROCESSED.inc()
-        print(f"----------metrics of FILES_PROCESSED: {FILES_PROCESSED}")
+        result = await _process_single_file(file_path, job_data.get("job_id"), user_id)
+
+        valid_results, invalid_results, error_count = [], [], 0
+        current_time = get_current_time_utc()
+
+        if isinstance(result, Exception):
+            error_count += 1
+            logger.error(f"[SingleFileActor] Task failed: {str(result)}", exc_info=True)
+        elif isinstance(result, dict) and result.get("error"):
+            invalid_results.append(
+                {
+                    **result,
+                    "batch_id": Binary.from_uuid(batch_id),
+                    "job_id": job_id,
+                    "company_id": company_id,
+                    "created_at": current_time,
+                    "updated_at": current_time,
+                }
+            )
+        elif isinstance(result, CVParseResponse):
+            valid_results.append(result)
+
         logger.info(
-            f"[Task {task_id}] File processed successfully in {time.perf_counter() - start:.2f}s"
+            f"[SingleFileActor] File processed: {len(valid_results)} success, {error_count} errors"
         )
+
+        await _insert_candidates(
+            valid_results,
+            batch_id,
+            str(job_id),
+            str(company_id),
+            user_id,
+            job_data,
+            current_time,
+        )
+        await _insert_candidate_errors(invalid_results)
+
     except Exception as e:
-        r.set(result_key, "failed")
-        FILES_FAILED.inc()
-        print(f"----------metrics of FILES_FAILED: {FILES_FAILED}")
-        logger.exception(f"Error processing file {file_path}: {e}")
-        raise Exception("process_single_file_task execution failed.")
+        logger.error(
+            f"[SingleFileActor] Failed to process file {file_path}: {str(e)}",
+            exc_info=True,
+        )
+        # `single_file_death_queue` here
+        r.lpush(f"single_file_death_queue:{job_id}", file_path)
+    
     finally:
-        file_duration = time.time() - start
-        FILE_PROCESS_DURATION.observe(file_duration)
-        print(f"----------metrics of FILE_PROCESS_DURATION: {FILE_PROCESS_DURATION}")
+        # Decrement files_to_process count
+        r.decr(f"files_to_process:{job_id_str}")
+
+@dramatiq.actor(actor_name="single_file_retry_actor")
+def single_file_retry_actor(
+    job_id: str, batch_id: str, job_data: dict, user_id: str, company_id: str
+):
+
+    MAX_RETRY_ATTEMPTS = 3
+    queue_name = f"single_file_death_queue:{job_id}"
+    retry_prefix = f"file_retry_count:{job_id}:"
+
+    failed_files = r.lrange(queue_name, 0, -1)
+
+    if not failed_files:
+        logger.info(f"[RetryActor] No failed files found in {queue_name}")
+        return
+
+    logger.info(f"[RetryActor] Retrying {len(failed_files)} files from {queue_name}")
+
+    for file_path_bytes in failed_files:
+        file_path = file_path_bytes.decode()
+        retry_key = retry_prefix + file_path
+
+        try:
+            attempt_count = int(r.get(retry_key) or 0)
+
+            if attempt_count >= MAX_RETRY_ATTEMPTS:
+                logger.warning(
+                    f"[RetryActor] Max attempts reached for {file_path}. Skipping."
+                )
+                continue
+
+            # Re-dispatch file to single_file_processor_actor
+            process_single_file_task.send(
+                file_path, batch_id, job_id, job_data, user_id, company_id
+            )
+
+            # Increment attempt count
+            r.set(retry_key, attempt_count + 1)
+
+        except Exception as e:
+            logger.error(
+                f"[RetryActor] Failed to retry {file_path}: {str(e)}", exc_info=True
+            )
+
+    # Clean up the death queue after processing
+    r.delete(queue_name)
+    logger.info(f"[RetryActor] Completed retry cycle for {queue_name}")
