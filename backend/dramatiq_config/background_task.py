@@ -204,7 +204,6 @@ async def zip_extract_and_prepare_actor(
 
         process_zip_task.send(
             batch_directory=batch_directory,
-            # batch_id=str(batch_id),
             batch_id=batch_id,
             job_id=job_id,
             user_id=user_details.get("user_id"),
