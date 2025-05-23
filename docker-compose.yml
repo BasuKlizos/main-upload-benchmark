@@ -2,7 +2,7 @@ services:
   backend_service:
     build:
       context: . # Root directory for build context
-      dockerfile: backend/Dockerfile # Dockerfile is inside backend/
+      dockerfile: backend/Dockerfile 
     container_name: upload_benchmark
     ports:
       - "8000:8000"
@@ -32,18 +32,6 @@ services:
     networks:
       - talentsync_network
 
-  # mongodb_exporter:
-  #   image: bitnami/mongodb-exporter:latest
-  #   container_name: mongodb_exporter
-  #   environment:
-  #     - MONGODB_URI=mongodb://mongodb:27017
-  #   ports:
-  #     - "9216:9216"
-  #   depends_on:
-  #     - mongodb
-  #   networks:
-  #     - talentsync_network
-
   redis:
     image: redis/redis-stack:latest
     container_name: redis
@@ -59,21 +47,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-  # redis_exporter:
-  #   image: oliver006/redis_exporter:latest
-  #   container_name: redis_exporter
-  #   command: --redis.addr=redis://redis:6379
-  #   ports:
-  #     - "9121:9121"
-  #   depends_on:
-  #     - redis
-  #   networks:
-  #     - talentsync_network
-  
+      
   dramatiq_worker:
     build:
-      context: . # Assuming Dockerfile is in backend/
+      context: . 
       dockerfile: backend/Dockerfile
     container_name: dramatiq_worker
     command: dramatiq backend.dramatiq_config.background_task --processes 1 --threads 4
@@ -93,8 +70,7 @@ services:
       - ./backend/logs:/app/backend/logs
     networks:
       - talentsync_network
-    # ports:
-    #   - "8002:8002"
+    
 
   prometheus:
     image: prom/prometheus
