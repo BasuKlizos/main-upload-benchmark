@@ -552,7 +552,7 @@ async def process_zip_extracted_files(
         death_queue_key = f"death_chunk_queue:{job_id}"
         if r.llen(death_queue_key) > 0:
             logger.info(f"Failed chunks found for job {job_id}, scheduling retry.")
-            retry_failed_chunks_actor.send_with_options(args=(job_id,), delay=30000)
+            retry_failed_chunks_actor.send_with_options(args=(job_id,), delay=10000)
         else:
             logger.info(f"No failed chunks found for job {job_id}, skipping retry.")
             
