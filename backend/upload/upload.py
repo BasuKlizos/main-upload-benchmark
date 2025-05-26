@@ -2,6 +2,16 @@ import time
 import base64
 
 from typing import List
+from fastapi import (
+    APIRouter,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
+from fastapi.responses import JSONResponse
 
 from backend.db_config.db import collection
 from backend.logging_config.logger import logger
@@ -14,16 +24,11 @@ from backend.types_ import UserData
 from backend.utils import (
     create_batch_id,
 )
-from fastapi import (
-    APIRouter,
-    File,
-    Form,
-    HTTPException,
-    Request,
-    UploadFile,
-    status,
+from backend.upload.upload_validation import(
+    batch_name_exists,
+    is_supported_file_type,
+    serialize_upload_file
 )
-from fastapi.responses import JSONResponse
 from backend.monitor.metrices import (
     UPLOAD_REQUESTS,
     UPLOAD_SUCCESS,
@@ -68,24 +73,35 @@ async def upload_candidates(
     try:
         origin = request.headers.get("origin") if request else None
         
-        if await batches.find_one({"batch_name": batch_name}):
+        # if await batches.find_one({"batch_name": batch_name}):
+        #     raise HTTPException(
+        #         status_code=status.HTTP_400_BAD_REQUEST,
+        #         detail="Batch name already taken."
+        #     )
+        if await batch_name_exists(batch_name, batches):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Batch name already taken."
             )
-        
+
         for file in files:
             logger.info(f"Processing file: {file.filename}")
-            if file.content_type not in [
-                "application/zip",
-                "application/x-zip-compressed",
-                "application/pdf",
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            ]:
+            # if file.content_type not in [
+            #     "application/zip",
+            #     "application/x-zip-compressed",
+            #     "application/pdf",
+            #     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            # ]:
+            #     logger.error(f"Invalid file type for {file.filename}: {file.content_type}")
+            #     raise HTTPException(
+            #         status_code=status.HTTP_400_BAD_REQUEST,
+            #         detail=f"File {file.filename} is not supported. Only ZIP files are allowed",
+            #     )
+            if not is_supported_file_type(file.content_type):
                 logger.error(f"Invalid file type for {file.filename}: {file.content_type}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"File {file.filename} is not supported. Only ZIP files are allowed",
+                    detail=f"Unsupported file type: {file.filename}"
                 )
 
         # Parse Role and User Details form UserData
@@ -93,16 +109,20 @@ async def upload_candidates(
         logger.debug(f"User details: {details}")
 
         # Read and serialize uploaded files
-        files_data = []
-        for file in files:
-            content = await file.read()
-            files_data.append(
-                {
-                    "filename": file.filename,
-                    "content_type": file.content_type,
-                    "content": base64.b64encode(content).decode("utf-8"),
-                }
-            )
+        # files_data = []
+        # for file in files:
+        #     content = await file.read()
+        #     files_data.append(
+        #         {
+        #             "filename": file.filename,
+        #             "content_type": file.content_type,
+        #             "content": base64.b64encode(content).decode("utf-8"),
+        #         }
+        #     )
+        files_data = [
+            serialize_upload_file(file) 
+            for file in files
+        ]
 
         file_count = len(files_data)
 
