@@ -86,17 +86,6 @@ async def upload_candidates(
 
         for file in files:
             logger.info(f"Processing file: {file.filename}")
-            # if file.content_type not in [
-            #     "application/zip",
-            #     "application/x-zip-compressed",
-            #     "application/pdf",
-            #     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            # ]:
-            #     logger.error(f"Invalid file type for {file.filename}: {file.content_type}")
-            #     raise HTTPException(
-            #         status_code=status.HTTP_400_BAD_REQUEST,
-            #         detail=f"File {file.filename} is not supported. Only ZIP files are allowed",
-            #     )
             if not is_supported_file_type(file.content_type):
                 logger.error(f"Invalid file type for {file.filename}: {file.content_type}")
                 raise HTTPException(
@@ -109,16 +98,6 @@ async def upload_candidates(
         logger.debug(f"User details: {details}")
 
         # Read and serialize uploaded files
-        # files_data = []
-        # for file in files:
-        #     content = await file.read()
-        #     files_data.append(
-        #         {
-        #             "filename": file.filename,
-        #             "content_type": file.content_type,
-        #             "content": base64.b64encode(content).decode("utf-8"),
-        #         }
-        #     )
         files_data = [
             serialize_upload_file(file) 
             for file in files
